@@ -1,11 +1,11 @@
-all: newsboard
+all: nb
 
 dep:
 	go get -u github.com/mattn/go-sqlite3
 
-newsboard: main.go
-	go build -o newsboard newsboard.go
+nb: nb.go
+	go build -o nb nb.go
 
 clean:
-	rm -rf newsboard
+	rm -rf nb
 
