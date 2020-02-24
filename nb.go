@@ -144,6 +144,9 @@ func createAndInitTables(newfile string) {
 
 	ss := []string{
 		"BEGIN TRANSACTION;",
+		"CREATE TABLE entry (entry_id INTEGER PRIMARY KEY NOT NULL, thing INTEGER NOT NULL, title TEXT, body TEXT, createdt TEXT, user_id INTEGER, parent_id INTEGER);",
+		"CREATE TABLE user (user_id INTEGER PRIMARY KEY NOT NULL, username TEXT, password TEXT, active INTEGER NOT NULL, email TEXT, CONSTRAINT unique_username UNIQUE (username), CONSTRAINT unique_email UNIQUE (email));",
+		"INSERT INTO user (user_id, username, password, active, email) VALUES (1, 'admin', '', 1, '');",
 		"COMMIT;",
 	}
 
