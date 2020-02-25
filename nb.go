@@ -85,9 +85,10 @@ Initialize new newsboard file:
 	}
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
-	http.HandleFunc("/", rootHandler(db))
 	http.HandleFunc("/login/", loginHandler(db))
 	http.HandleFunc("/logout/", logoutHandler(db))
+	http.HandleFunc("/", indexHandler(db))
+	http.HandleFunc("/item/", itemHandler(db))
 	fmt.Printf("Listening on %s...\n", port)
 	err = http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
 	log.Fatal(err)
@@ -307,52 +308,15 @@ func printPageNav(w http.ResponseWriter, login *User) {
 	fmt.Fprintf(w, "</header>\n")
 }
 
-func rootHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		login := getLoginUser(r, db)
-
-		w.Header().Set("Content-Type", "text/html")
-		printPageHead(w, nil, nil)
-		printPageNav(w, login)
-
-		fmt.Fprintf(w, "<section class=\"main\">\n")
-		s := "SELECT title, url, createdt, u.user_id, u.username FROM entry LEFT OUTER JOIN user u ON entry.user_id = u.user_id WHERE thing = 0 ORDER BY createdt DESC"
-		rows, err := db.Query(s)
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-
-		fmt.Fprintf(w, "<ul class=\"vertical-list\">\n")
-		var u User
-		var e Entry
-		for rows.Next() {
-			rows.Scan(&e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username)
-			tcreatedt, _ := time.Parse(time.RFC3339, e.Createdt)
-			screatedt := tcreatedt.Format("2 Jan 2006")
-
-			fmt.Fprintf(w, "<li>\n")
-
-			fmt.Fprintf(w, "<div class=\"entry-title\">\n")
-			surl := e.Url
-			if surl == "" {
-				surl = fmt.Sprintf("/entry/%d", e.Entryid)
-			}
-			fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", surl, e.Title)
-			fmt.Fprintf(w, "</div>\n")
-			fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
-			fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
-			fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
-			fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", surl, 109)
-			fmt.Fprintf(w, "</ul>\n")
-
-			fmt.Fprintf(w, "</li>\n")
-		}
-		fmt.Fprintf(w, "</ul>\n")
-
-		fmt.Fprintf(w, "</section>\n")
-		printPageFoot(w)
+func isCorrectPassword(inputPassword, hashedpwd string) bool {
+	if hashedpwd == "" && inputPassword == "" {
+		return true
 	}
+	err := bcrypt.CompareHashAndPassword([]byte(hashedpwd), []byte(inputPassword))
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
@@ -451,13 +415,100 @@ func logoutHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-func isCorrectPassword(inputPassword, hashedpwd string) bool {
-	if hashedpwd == "" && inputPassword == "" {
-		return true
+func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		login := getLoginUser(r, db)
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, login)
+
+		fmt.Fprintf(w, "<section class=\"main\">\n")
+		s := "SELECT entry_id, title, url, createdt, u.user_id, u.username FROM entry LEFT OUTER JOIN user u ON entry.user_id = u.user_id WHERE thing = 0 ORDER BY createdt DESC"
+		rows, err := db.Query(s)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+
+		fmt.Fprintf(w, "<ul class=\"vertical-list\">\n")
+		var u User
+		var e Entry
+		for rows.Next() {
+			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username)
+
+			tcreatedt, _ := time.Parse(time.RFC3339, e.Createdt)
+			screatedt := tcreatedt.Format("2 Jan 2006")
+
+			surl := e.Url
+			if surl == "" {
+				surl = fmt.Sprintf("/item/?id=%d", e.Entryid)
+			}
+
+			fmt.Fprintf(w, "<li>\n")
+
+			fmt.Fprintf(w, "<div class=\"entry-title\">\n")
+			fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", surl, e.Title)
+			fmt.Fprintf(w, "</div>\n")
+			fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
+			fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
+			fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
+			fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", surl, 109)
+			fmt.Fprintf(w, "</ul>\n")
+
+			fmt.Fprintf(w, "</li>\n")
+		}
+		fmt.Fprintf(w, "</ul>\n")
+
+		fmt.Fprintf(w, "</section>\n")
+		printPageFoot(w)
 	}
-	err := bcrypt.CompareHashAndPassword([]byte(hashedpwd), []byte(inputPassword))
-	if err != nil {
-		return false
+}
+
+func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		login := getLoginUser(r, db)
+
+		entryId := r.FormValue("id")
+		if entryId == "" {
+			http.Error(w, "Not found.", 404)
+			return
+		}
+
+		var u User
+		var e Entry
+
+		s := "SELECT entry_id, title, url, createdt, u.user_id, u.username FROM entry LEFT OUTER JOIN user u ON entry.user_id = u.user_id WHERE thing = 0 AND entry.entry_id = ?"
+		row := db.QueryRow(s, entryId)
+		err := row.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username)
+		if err == sql.ErrNoRows {
+			http.Error(w, "Not found.", 404)
+			return
+		}
+
+		tcreatedt, _ := time.Parse(time.RFC3339, e.Createdt)
+		screatedt := tcreatedt.Format("2 Jan 2006")
+
+		surl := e.Url
+		if surl == "" {
+			surl = fmt.Sprintf("/item/?id=%d", e.Entryid)
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, login)
+		fmt.Fprintf(w, "<section class=\"main\">\n")
+
+		fmt.Fprintf(w, "<div class=\"entry-title\">\n")
+		fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", surl, e.Title)
+		fmt.Fprintf(w, "</div>\n")
+		fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
+		fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
+		fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
+		fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", surl, 109)
+		fmt.Fprintf(w, "</ul>\n")
+
+		fmt.Fprintf(w, "</section>\n")
+		printPageFoot(w)
 	}
-	return true
 }
