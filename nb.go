@@ -440,20 +440,21 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			tcreatedt, _ := time.Parse(time.RFC3339, e.Createdt)
 			screatedt := tcreatedt.Format("2 Jan 2006")
 
-			surl := e.Url
-			if surl == "" {
-				surl = fmt.Sprintf("/item/?id=%d", e.Entryid)
+			itemurl := fmt.Sprintf("/item/?id=%d", e.Entryid)
+			entryurl := e.Url
+			if entryurl == "" {
+				entryurl = itemurl
 			}
 
 			fmt.Fprintf(w, "<li>\n")
 
 			fmt.Fprintf(w, "<div class=\"entry-title\">\n")
-			fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", surl, e.Title)
+			fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", entryurl, e.Title)
 			fmt.Fprintf(w, "</div>\n")
 			fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 			fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
 			fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
-			fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", surl, 109)
+			fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", itemurl, 109)
 			fmt.Fprintf(w, "</ul>\n")
 
 			fmt.Fprintf(w, "</li>\n")
@@ -489,9 +490,10 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		tcreatedt, _ := time.Parse(time.RFC3339, e.Createdt)
 		screatedt := tcreatedt.Format("2 Jan 2006")
 
-		surl := e.Url
-		if surl == "" {
-			surl = fmt.Sprintf("/item/?id=%d", e.Entryid)
+		itemurl := fmt.Sprintf("/item/?id=%d", e.Entryid)
+		entryurl := e.Url
+		if entryurl == "" {
+			entryurl = itemurl
 		}
 
 		w.Header().Set("Content-Type", "text/html")
@@ -500,12 +502,12 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 
 		fmt.Fprintf(w, "<div class=\"entry-title\">\n")
-		fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", surl, e.Title)
+		fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", entryurl, e.Title)
 		fmt.Fprintf(w, "</div>\n")
 		fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 		fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
 		fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
-		fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", surl, 109)
+		fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", itemurl, 109)
 		fmt.Fprintf(w, "</ul>\n")
 
 		fmt.Fprintf(w, "</section>\n")
