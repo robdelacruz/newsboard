@@ -2,12 +2,19 @@ html {
     font-size: 12px;
 }
 body {
-    margin: 0 auto 1em;
-    padding: 0;
     font-family: "Verdana", "Geneva", sans-serif;
+}
+
+.body {
+    margin: 0 auto 1rem;
+    padding: 0;
     max-width: 900px;
+    min-height: 500px;
     color: var(--fg-1);
     background-color: var(--bg-1);
+}
+.main {
+    padding: 0.25rem 1rem;
 }
 
 p, ul, li, h1, h2, h3, h4 {
@@ -60,10 +67,10 @@ a, a:visited {
 .text-grayed-2 {color: var(--grayed-2);}
 
 .heading {
-    font-size: 1.25rem;
+    font-size: 1rem;
 }
 .content .heading, .content h1, .content h2, .content h3, .content h4, .content h5 {
-    font-size: 1.25rem;
+    font-size: 1rem;
     margin-bottom: 0.5rem;
 }
 .content p, .content .heading {
@@ -84,14 +91,11 @@ a, a:visited {
 }
 .vertical-list .heading {
     margin-bottom: 0.25rem;
-    font-size: 1.25rem;
+    font-size: 1rem;
 }
 
 .line-menu {
     list-style-type: none;
-}
-.line-menu, .line-menu a {
-    color: var(--grayed-2);
 }
 .line-menu li {
     display: inline;
@@ -99,4 +103,85 @@ a, a:visited {
 .line-menu li:not(:first-child)::before {
     content: " | ";
 }
+.byline {
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+}
+.byline, .byline a {
+    color: var(--grayed-2);
+}
 
+.masthead {
+    padding: 0.5rem;
+    border-bottom: 1px solid #ddd;
+    background-color: var(--grayed-1);
+}
+.navbar {
+    display: flex;
+    justify-content: space-between;
+}
+.navbar .right {
+    text-align: right;
+}
+.navbar a {
+    text-decoration: none;
+}
+.navbar a:not(:last-child) {
+    margin-right: 0.25em;
+}
+.navbar .heading {
+    display: inline;
+    margin-right: 0.5em;
+}
+.navbar ul {
+    display: inline;
+}
+
+.error, .warning {
+    color: var(--grayed-1);
+}
+.success {
+    color: var(--fg-1); /* green */
+}
+.simpleform .control {
+    margin: 0.5em 0;
+    padding: 0;
+}
+.simpleform .control label {
+    display: block;
+}
+.simpleform .control.row label {
+    display: inline;
+}
+.simpleform .control.row [type=checkbox] {
+    margin-right: 0.5em;
+}
+.simpleform input:focus, .simpleform textarea:focus, .simpleform button:focus {
+    border: 0.3em solid #addb67;
+}
+.simpleform .control button {
+    margin-right: 0.5em;
+}
+.simpleform .control.row {
+    display: flex;
+    flex-direction: row;
+}
+.simpleform .control.row label {
+    margin-right: 0.5em;
+}
+.simpleform textarea {
+    width: 100%;
+}
+.simpleform select {
+    padding: 0 1em;
+}
+select {
+    padding: 0 0.5em;
+}
+.submit {
+    font-weight: bold;
+}
+
+.displayonly input, .displayonly textarea {
+    background-color: #aaa;
+}
