@@ -110,6 +110,17 @@ a, a:visited {
 .byline, .byline a {
     color: var(--grayed-2);
 }
+.byline a {
+    text-decoration: none;
+}
+
+.entry-title {
+    margin-bottom: 0.25rem;
+    font-size: 1.125rem;
+}
+.entry-title a {
+    text-decoration: none;
+}
 
 .masthead {
     padding: 0.5rem;

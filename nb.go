@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
@@ -21,6 +22,17 @@ type User struct {
 	Username string
 	Active   bool
 	Email    string
+}
+
+type Entry struct {
+	Entryid  int64
+	Thing    int
+	Title    string
+	Url      string
+	Body     string
+	Createdt string
+	Userid   int64
+	Parentid int64
 }
 
 func main() {
@@ -304,7 +316,40 @@ func rootHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		printPageNav(w, login)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
-		fmt.Fprintf(w, "<p>hello</p>\n")
+		s := "SELECT title, url, createdt, u.user_id, u.username FROM entry LEFT OUTER JOIN user u ON entry.user_id = u.user_id WHERE thing = 0 ORDER BY createdt DESC"
+		rows, err := db.Query(s)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+
+		fmt.Fprintf(w, "<ul class=\"vertical-list\">\n")
+		var u User
+		var e Entry
+		for rows.Next() {
+			rows.Scan(&e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username)
+			tcreatedt, _ := time.Parse(time.RFC3339, e.Createdt)
+			screatedt := tcreatedt.Format("2 Jan 2006")
+
+			fmt.Fprintf(w, "<li>\n")
+
+			fmt.Fprintf(w, "<div class=\"entry-title\">\n")
+			surl := e.Url
+			if surl == "" {
+				surl = fmt.Sprintf("/entry/%d", e.Entryid)
+			}
+			fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", surl, e.Title)
+			fmt.Fprintf(w, "</div>\n")
+			fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
+			fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
+			fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
+			fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", surl, 109)
+			fmt.Fprintf(w, "</ul>\n")
+
+			fmt.Fprintf(w, "</li>\n")
+		}
+		fmt.Fprintf(w, "</ul>\n")
+
 		fmt.Fprintf(w, "</section>\n")
 		printPageFoot(w)
 	}
