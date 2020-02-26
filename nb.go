@@ -518,7 +518,7 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, parseMarkdown(e.Body))
 		fmt.Fprintf(w, "</div>\n")
 
-		fmt.Fprintf(w, "<form class=\"simpleform\">\n")
+		fmt.Fprintf(w, "<form class=\"simpleform mb-2xl\">\n")
 		fmt.Fprintf(w, "  <div class=\"control\">\n")
 		fmt.Fprintf(w, "    <textarea id=\"replybody\" name=\"replybody\" rows=\"6\" cols=\"60\"></textarea>\n")
 		fmt.Fprintf(w, "  </div>\n")
@@ -526,6 +526,28 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "    <button class=\"submit\">add comment</button>\n")
 		fmt.Fprintf(w, "  </div>\n")
 		fmt.Fprintf(w, "</form>\n")
+
+		fmt.Fprintf(w, "<section class=\"entry-comments\">\n")
+
+		s = "SELECT entry_id, body, createdt, u.user_id, u.username FROM entry LEFT OUTER JOIN user u ON entry.user_id = u.user_id WHERE thing = 1 AND parent_id = ? ORDER BY entry_id"
+		rows, err := db.Query(s, e.Entryid)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		var reply Entry
+		for rows.Next() {
+			rows.Scan(&reply.Entryid, &reply.Body, &reply.Createdt, &u.Userid, &u.Username)
+			sreplydt := parseIsoDate(reply.Createdt)
+			replyurl := fmt.Sprintf("/item/?id=%d", reply.Entryid)
+
+			fmt.Fprintf(w, "<p class=\"byline mb-xs\">%s <a href=\"%s\">%s</a></p>\n", u.Username, replyurl, sreplydt)
+			fmt.Fprintf(w, "<div class=\"entry-body content mt-sm mb-sm\">\n")
+			fmt.Fprintf(w, parseMarkdown(reply.Body))
+			fmt.Fprintf(w, "</div>\n")
+			fmt.Fprintf(w, "<p class=\"text-xs mb-base\"><a href=\"#\">reply</a></p>\n")
+		}
+		fmt.Fprintf(w, "</section>\n")
 
 		fmt.Fprintf(w, "</section>\n")
 		printPageFoot(w)

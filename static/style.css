@@ -62,6 +62,7 @@ a, a:visited {
 .mb-base {margin-bottom: 1rem;}
 .mb-lg {margin-bottom: 1.25rem;}
 .mb-xl {margin-bottom: 1.5rem;}
+.mb-2xl {margin-bottom: 3rem;}
 
 .text-xs {font-size: 0.75rem;}
 .text-sm {font-size: 0.875rem;}
@@ -110,7 +111,6 @@ a, a:visited {
     content: " | ";
 }
 .byline {
-    margin-bottom: 0.5rem;
     font-size: 0.75rem;
 }
 .byline, .byline a {
