@@ -25,13 +25,22 @@ Also, how long did it take to code it and how much of the functionality was borr
 
 INSERT INTO entry (entry_id, thing, body, createdt, user_id, parent_id) VALUES (3, 1, 'I thought I read somewhere that NewsBoard was programmed in Go, with Sqlite3 as the database. Their code is even posted on github.', '2020-02-25T14:00:00+08:00', 3, 2);
 INSERT INTO entry (entry_id, thing, body, createdt, user_id, parent_id) VALUES (4, 1, 'I bet they used Perl because the UI looks cool.', '2020-02-25T14:00:00+08:00', 4, 2);
-INSERT INTO entry (entry_id, thing, body, createdt, user_id, parent_id) VALUES (5, 1, 'No, they used Go. Check out their (github)[https://github.com/robdelacruz/newsboard] page.', '2020-02-25T14:00:00+08:00', 3, 4);
+INSERT INTO entry (entry_id, thing, body, createdt, user_id, parent_id) VALUES (5, 1, 'No, they used Go. Check out their [github](https://github.com/robdelacruz/newsboard) page.', '2020-02-25T14:00:00+08:00', 3, 4);
+
 INSERT INTO entry (entry_id, thing, body, createdt, user_id, parent_id) VALUES (6, 1, 'NB''s interface looks oddly familiar. It''s like I saw it somewhere else before.', '2020-02-25T14:00:00+08:00', 1, 2);
 
-INSERT INTO entry (entry_id, thing, body, createdt, user_id, parent_id) VALUES (7, 1,
+INSERT INTO entry (entry_id, thing, body, createdt, user_id, parent_id) VALUES (7, 1, 'That''s because they stole the entire thing from HackerNews.', '2020-02-25T14:00:00+08:00', 2, 6);
+
+INSERT INTO entry (entry_id, thing, body, createdt, user_id, parent_id) VALUES (8, 1,
 'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
 
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
     '2020-02-25T14:00:00+08:00', 2, 5);
+
+INSERT INTO entry (entry_id, thing, body, createdt, user_id, parent_id) VALUES (9, 1,
+'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
+    '2020-02-25T14:00:00+08:00', 2, 8);
 COMMIT;
 
