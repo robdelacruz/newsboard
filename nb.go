@@ -13,6 +13,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
+	"gopkg.in/russross/blackfriday.v2"
 )
 
 const ADMIN_ID = 1
@@ -191,6 +192,15 @@ func sqlexec(db *sql.DB, s string, pp ...interface{}) (sql.Result, error) {
 	return stmt.Exec(pp...)
 }
 
+func parseMarkdown(s string) string {
+	return string(blackfriday.Run([]byte(s), blackfriday.WithExtensions(blackfriday.HardLineBreak)))
+}
+
+func parseIsoDate(dt string) string {
+	tdt, _ := time.Parse(time.RFC3339, dt)
+	return tdt.Format("2 Jan 2006")
+}
+
 func createAndInitTables(newfile string) {
 	if fileExists(newfile) {
 		s := fmt.Sprintf("File '%s' already exists. Can't initialize it.\n", newfile)
@@ -206,7 +216,7 @@ func createAndInitTables(newfile string) {
 
 	ss := []string{
 		"BEGIN TRANSACTION;",
-		"CREATE TABLE entry (entry_id INTEGER PRIMARY KEY NOT NULL, thing INTEGER NOT NULL, title TEXT, body TEXT, createdt TEXT, user_id INTEGER, parent_id INTEGER);",
+		"CREATE TABLE entry (entry_id INTEGER PRIMARY KEY NOT NULL, thing INTEGER NOT NULL, title TEXT, url TEXT, body TEXT, createdt TEXT, user_id INTEGER, parent_id INTEGER);",
 		"CREATE TABLE user (user_id INTEGER PRIMARY KEY NOT NULL, username TEXT, password TEXT, active INTEGER NOT NULL, email TEXT, CONSTRAINT unique_username UNIQUE (username), CONSTRAINT unique_email UNIQUE (email));",
 		"INSERT INTO user (user_id, username, password, active, email) VALUES (1, 'admin', '', 1, '');",
 		"COMMIT;",
@@ -436,10 +446,7 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		var e Entry
 		for rows.Next() {
 			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username)
-
-			tcreatedt, _ := time.Parse(time.RFC3339, e.Createdt)
-			screatedt := tcreatedt.Format("2 Jan 2006")
-
+			screatedt := parseIsoDate(e.Createdt)
 			itemurl := fmt.Sprintf("/item/?id=%d", e.Entryid)
 			entryurl := e.Url
 			if entryurl == "" {
@@ -479,17 +486,14 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		var u User
 		var e Entry
 
-		s := "SELECT entry_id, title, url, createdt, u.user_id, u.username FROM entry LEFT OUTER JOIN user u ON entry.user_id = u.user_id WHERE thing = 0 AND entry.entry_id = ?"
+		s := "SELECT entry_id, title, url, body, createdt, u.user_id, u.username FROM entry LEFT OUTER JOIN user u ON entry.user_id = u.user_id WHERE thing = 0 AND entry.entry_id = ?"
 		row := db.QueryRow(s, entryId)
-		err := row.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username)
+		err := row.Scan(&e.Entryid, &e.Title, &e.Url, &e.Body, &e.Createdt, &u.Userid, &u.Username)
 		if err == sql.ErrNoRows {
 			http.Error(w, "Not found.", 404)
 			return
 		}
-
-		tcreatedt, _ := time.Parse(time.RFC3339, e.Createdt)
-		screatedt := tcreatedt.Format("2 Jan 2006")
-
+		screatedt := parseIsoDate(e.Createdt)
 		itemurl := fmt.Sprintf("/item/?id=%d", e.Entryid)
 		entryurl := e.Url
 		if entryurl == "" {
@@ -509,6 +513,19 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
 		fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", itemurl, 109)
 		fmt.Fprintf(w, "</ul>\n")
+
+		fmt.Fprintf(w, "<div class=\"entry-body content mt-base mb-base\">\n")
+		fmt.Fprintf(w, parseMarkdown(e.Body))
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<form class=\"simpleform\">\n")
+		fmt.Fprintf(w, "  <div class=\"control\">\n")
+		fmt.Fprintf(w, "    <textarea id=\"replybody\" name=\"replybody\" rows=\"6\" cols=\"60\"></textarea>\n")
+		fmt.Fprintf(w, "  </div>\n")
+		fmt.Fprintf(w, "  <div class=\"control\">\n")
+		fmt.Fprintf(w, "    <button class=\"submit\">add comment</button>\n")
+		fmt.Fprintf(w, "  </div>\n")
+		fmt.Fprintf(w, "</form>\n")
 
 		fmt.Fprintf(w, "</section>\n")
 		printPageFoot(w)

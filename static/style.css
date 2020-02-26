@@ -51,6 +51,12 @@ a, a:visited {
 .m-lg {margin: 1.25rem;}
 .m-xl {margin: 1.5rem;}
 
+.mt-xs {margin-top: 0.25rem;}
+.mt-sm {margin-top: 0.5rem;}
+.mt-base {margin-top: 1rem;}
+.mt-lg {margin-top: 1.25rem;}
+.mt-xl {margin-top: 1.5rem;}
+
 .mb-xs {margin-bottom: 0.25rem;}
 .mb-sm {margin-bottom: 0.5rem;}
 .mb-base {margin-bottom: 1rem;}
@@ -121,6 +127,8 @@ a, a:visited {
 .entry-title a {
     text-decoration: none;
 }
+.entry-body {
+}
 
 .masthead {
     padding: 0.5rem;
@@ -181,7 +189,7 @@ a, a:visited {
     margin-right: 0.5em;
 }
 .simpleform textarea {
-    width: 100%;
+    /*width: 100%;*/
 }
 .simpleform select {
     padding: 0 1em;
@@ -190,7 +198,7 @@ select {
     padding: 0 0.5em;
 }
 .submit {
-    font-weight: bold;
+    /*font-weight: bold;*/
 }
 
 .displayonly input, .displayonly textarea {
