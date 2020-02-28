@@ -129,6 +129,13 @@ a, a:visited {
 }
 .entry-body {
 }
+.entry-body p:first-of-type {
+    display: inline;
+}
+.entry-body .mention {
+    font-weight: bold;
+    font-style: italic;
+}
 .entry-comments {
 }
 .entry-comment {

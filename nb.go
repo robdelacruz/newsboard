@@ -537,28 +537,41 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 }
 
 func printComments(w http.ResponseWriter, db *sql.DB, parentid int64, level int) {
-	s := "SELECT entry_id, body, createdt, u.user_id, u.username FROM entry LEFT OUTER JOIN user u ON entry.user_id = u.user_id WHERE thing = 1 AND parent_id = ? ORDER BY entry_id"
+	s := `SELECT e.entry_id, e.body, e.createdt, u.user_id, u.username, uparent.username  
+FROM entry AS e 
+LEFT OUTER JOIN user u ON e.user_id = u.user_id 
+LEFT OUTER JOIN entry parent ON e.parent_id = parent.entry_id 
+LEFT OUTER JOIN user uparent ON uparent.user_id = parent.user_id
+WHERE e.thing = 1 AND e.parent_id = ? 
+ORDER BY e.entry_id`
 	rows, err := db.Query(s, parentid)
 	if err != nil {
 		log.Fatal(err)
 		return
 	}
 	var reply Entry
-	var u User
+	var u, uparent User
 	for rows.Next() {
-		rows.Scan(&reply.Entryid, &reply.Body, &reply.Createdt, &u.Userid, &u.Username)
+		rows.Scan(&reply.Entryid, &reply.Body, &reply.Createdt, &u.Userid, &u.Username, &uparent.Username)
 		sreplydt := parseIsoDate(reply.Createdt)
 		replyurl := fmt.Sprintf("/item/?id=%d", reply.Entryid)
 
 		fmt.Fprintf(w, "<div class=\"entry-comment\" style=\"padding-left: %drem\">\n", level*2)
 		fmt.Fprintf(w, "  <p class=\"byline mb-xs\">%s <a href=\"%s\">%s</a></p>\n", u.Username, replyurl, sreplydt)
 		fmt.Fprintf(w, "  <div class=\"entry-body content mt-sm mb-sm\">\n")
+		if level >= 1 {
+			fmt.Fprintf(w, "<span class=\"mention\">@%s</span> ", uparent.Username)
+		}
 		fmt.Fprintf(w, parseMarkdown(reply.Body))
 		fmt.Fprintf(w, "  </div>\n")
 		fmt.Fprintf(w, "  <p class=\"text-xs mb-base\"><a href=\"#\">reply</a></p>\n")
 		fmt.Fprintf(w, "</div>\n")
 
-		// Print this reply's children indented.
-		printComments(w, db, reply.Entryid, level+1)
+		// Indent any replies, but only up to 2nd level indent.
+		if level == 0 {
+			printComments(w, db, reply.Entryid, level+1)
+		} else {
+			printComments(w, db, reply.Entryid, level)
+		}
 	}
 }
