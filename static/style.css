@@ -70,8 +70,9 @@ a, a:visited {
 .text-lg {font-size: 1.125rem;}
 .text-xl {font-size: 1.25rem;}
 
-.text-grayed-1 {color: var(--grayed-1);}
-.text-grayed-2 {color: var(--grayed-2);}
+.text-grayed-1, .text-grayed-1 a {color: var(--grayed-1);}
+.text-grayed-2, .text-grayed-2 a {color: var(--grayed-2);}
+.text-italic {font-style: italic;}
 
 .heading {
     font-size: 1rem;

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -17,6 +18,9 @@ import (
 )
 
 const ADMIN_ID = 1
+
+const SUBMISSION = 0
+const COMMENT = 1
 
 type User struct {
 	Userid   int64
@@ -334,6 +338,8 @@ func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		var errmsg string
 		login := getLoginUser(r, db)
 
+		from := r.FormValue("from")
+
 		if r.Method == "POST" {
 			username := r.FormValue("username")
 			password := r.FormValue("password")
@@ -373,8 +379,11 @@ func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 				}
 				http.SetCookie(w, &c)
 
-				// Display notes list page.
-				http.Redirect(w, r, "/", http.StatusSeeOther)
+				fromurl := "/"
+				if from != "" {
+					fromurl, _ = url.QueryUnescape(from)
+				}
+				http.Redirect(w, r, fromurl, http.StatusSeeOther)
 				return
 			}
 		}
@@ -384,7 +393,7 @@ func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		printPageNav(w, login)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
-		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/login/\" method=\"post\">\n")
+		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/login/?from=%s\" method=\"post\">\n", from)
 		fmt.Fprintf(w, "<h1 class=\"heading\">Login</h1>")
 		if errmsg != "" {
 			fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -447,7 +456,7 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		for rows.Next() {
 			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username)
 			screatedt := parseIsoDate(e.Createdt)
-			itemurl := fmt.Sprintf("/item/?id=%d", e.Entryid)
+			itemurl := createItemUrl(e.Entryid)
 			entryurl := e.Url
 			if entryurl == "" {
 				entryurl = itemurl
@@ -473,31 +482,133 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
+func validateIdParm(w http.ResponseWriter, id int64) bool {
+	if id == -1 {
+		http.Error(w, "Not found.", 404)
+		return false
+	}
+	return true
+}
+
+func queryEntry(db *sql.DB, entryid int64) (*Entry, *User, *Entry, error) {
+	var u User
+	var e Entry
+	var p Entry // parent
+
+	s := `SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, 
+IFNULL(p.entry_id, 0), IFNULL(p.thing, 0), IFNULL(p.title, ''), IFNULL(p.url, ''), IFNULL(p.body, ''), IFNULL(p.createdt, ''), 
+IFNULL(u.user_id, 0), IFNULL(u.username, ''), IFNULL(u.active, 0), IFNULL(u.email, '') 
+FROM entry e 
+LEFT OUTER JOIN user u ON e.user_id = u.user_id 
+LEFT OUTER JOIN entry p ON e.parent_id = p.entry_id 
+WHERE e.entry_id = ?`
+	row := db.QueryRow(s, entryid)
+	err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt,
+		&p.Entryid, &p.Thing, &p.Title, &p.Url, &p.Body, &p.Createdt,
+		&u.Userid, &u.Username, &u.Active, &u.Email)
+
+	return &e, &u, &p, err
+}
+
+func queryRootEntry(db *sql.DB, entryid int64) (*Entry, error) {
+	nIteration := 0
+	for {
+		e, _, p, err := queryEntry(db, entryid)
+		if err != nil {
+			return nil, err
+		}
+
+		// If no parent, e is the root
+		if p.Entryid == 0 {
+			return e, nil
+		}
+
+		// Set a limit to number of iterations in case there's a circular reference
+		nIteration++
+		if nIteration > 100 {
+			return e, nil
+		}
+
+		entryid = p.Entryid
+	}
+}
+
+func handleDbErr(w http.ResponseWriter, err error, sfunc string) bool {
+	if err == sql.ErrNoRows {
+		http.Error(w, "Not found.", 404)
+		return true
+	}
+	if err != nil {
+		log.Printf("%s: database error (%s)\n", sfunc, err)
+		http.Error(w, "Server database error.", 500)
+		return true
+	}
+	return false
+}
+
+func validateLogin(w http.ResponseWriter, login *User) bool {
+	if login.Userid == -1 {
+		http.Error(w, "Not logged in.", 401)
+		return false
+	}
+	if !login.Active {
+		http.Error(w, "Not an active user.", 401)
+		return false
+	}
+	return true
+}
+
+func createItemUrl(id int64) string {
+	return fmt.Sprintf("/item/?id=%d", id)
+}
+
 func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		login := getLoginUser(r, db)
 
-		entryId := r.FormValue("id")
-		if entryId == "" {
-			http.Error(w, "Not found.", 404)
+		entryid := idtoi(r.FormValue("id"))
+		if !validateIdParm(w, entryid) {
+			return
+		}
+		e, u, p, err := queryEntry(db, entryid)
+		if handleDbErr(w, err, "itemHandler") {
 			return
 		}
 
-		var u User
-		var e Entry
-
-		s := "SELECT entry_id, title, url, body, createdt, u.user_id, u.username FROM entry LEFT OUTER JOIN user u ON entry.user_id = u.user_id WHERE thing = 0 AND entry.entry_id = ?"
-		row := db.QueryRow(s, entryId)
-		err := row.Scan(&e.Entryid, &e.Title, &e.Url, &e.Body, &e.Createdt, &u.Userid, &u.Username)
-		if err == sql.ErrNoRows {
-			http.Error(w, "Not found.", 404)
-			return
-		}
-		screatedt := parseIsoDate(e.Createdt)
-		itemurl := fmt.Sprintf("/item/?id=%d", e.Entryid)
+		itemurl := createItemUrl(e.Entryid)
 		entryurl := e.Url
 		if entryurl == "" {
 			entryurl = itemurl
+		}
+
+		var errmsg string
+		var comment Entry
+		if r.Method == "POST" {
+			if !validateLogin(w, login) {
+				return
+			}
+
+			for {
+				comment.Body = strings.TrimSpace(r.FormValue("commentbody"))
+				if comment.Body == "" {
+					errmsg = "Please enter a comment."
+					break
+				}
+
+				comment.Body = strings.ReplaceAll(comment.Body, "\r", "") // CRLF => CR
+				comment.Createdt = time.Now().Format(time.RFC3339)
+
+				s := "INSERT INTO entry (thing, parent_id, title, body, createdt, user_id) VALUES (?, ?, ?, ?, ?, ?)"
+				_, err := sqlexec(db, s, COMMENT, e.Entryid, "", comment.Body, comment.Createdt, login.Userid)
+				if err != nil {
+					log.Printf("DB error creating comment (%s)\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
+				http.Redirect(w, r, itemurl, http.StatusSeeOther)
+				return
+			}
 		}
 
 		w.Header().Set("Content-Type", "text/html")
@@ -505,26 +616,54 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		printPageNav(w, login)
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 
-		fmt.Fprintf(w, "<div class=\"entry-title\">\n")
-		fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", entryurl, e.Title)
-		fmt.Fprintf(w, "</div>\n")
+		if e.Thing == SUBMISSION {
+			fmt.Fprintf(w, "<div class=\"entry-title\">\n")
+			fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", entryurl, e.Title)
+			fmt.Fprintf(w, "</div>\n")
+		}
 		fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 		fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
-		fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
-		fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", itemurl, 109)
+		fmt.Fprintf(w, "  <li>%s</li>\n", parseIsoDate(e.Createdt))
+		if e.Thing == SUBMISSION {
+			ncomments := 5
+			fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", itemurl, ncomments)
+		}
+		if e.Thing == COMMENT {
+			parenturl := createItemUrl(p.Entryid)
+			fmt.Fprintf(w, "  <li><a href=\"%s\">parent</a></li>\n", parenturl)
+
+			root, err := queryRootEntry(db, e.Entryid)
+			if err == nil {
+				rooturl := createItemUrl(root.Entryid)
+				fmt.Fprintf(w, "  <li>on: <a href=\"%s\">%s</a></li>\n", rooturl, root.Title)
+			} else {
+				log.Printf("DB error querying root entry (%s)\n", err)
+			}
+		}
 		fmt.Fprintf(w, "</ul>\n")
 
 		fmt.Fprintf(w, "<div class=\"entry-body content mt-base mb-base\">\n")
 		fmt.Fprintf(w, parseMarkdown(e.Body))
 		fmt.Fprintf(w, "</div>\n")
 
-		fmt.Fprintf(w, "<form class=\"simpleform mb-2xl\">\n")
-		fmt.Fprintf(w, "  <div class=\"control\">\n")
-		fmt.Fprintf(w, "    <textarea id=\"replybody\" name=\"replybody\" rows=\"6\" cols=\"60\"></textarea>\n")
-		fmt.Fprintf(w, "  </div>\n")
-		fmt.Fprintf(w, "  <div class=\"control\">\n")
-		fmt.Fprintf(w, "    <button class=\"submit\">add comment</button>\n")
-		fmt.Fprintf(w, "  </div>\n")
+		fmt.Fprintf(w, "<form class=\"simpleform mb-2xl\" method=\"post\" action=\"%s\">\n", itemurl)
+		if login.Userid == -1 || !login.Active {
+			fmt.Fprintf(w, "<div class=\"control text-sm text-grayed-2 text-italic\">\n")
+			fmt.Fprintf(w, "<label><a href=\"/login/?from=%s\">Log in</a> to post a comment.</label>\n", url.QueryEscape(r.RequestURI))
+			fmt.Fprintf(w, "</div>\n")
+		} else {
+			if errmsg != "" {
+				fmt.Fprintf(w, "<div class=\"control\">\n")
+				fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+				fmt.Fprintf(w, "</div>\n")
+			}
+			fmt.Fprintf(w, "  <div class=\"control\">\n")
+			fmt.Fprintf(w, "    <textarea id=\"commentbody\" name=\"commentbody\" rows=\"6\" cols=\"60\">%s</textarea>\n", comment.Body)
+			fmt.Fprintf(w, "  </div>\n")
+			fmt.Fprintf(w, "  <div class=\"control\">\n")
+			fmt.Fprintf(w, "    <button class=\"submit\">add comment</button>\n")
+			fmt.Fprintf(w, "  </div>\n")
+		}
 		fmt.Fprintf(w, "</form>\n")
 
 		fmt.Fprintf(w, "<section class=\"entry-comments\">\n")
@@ -537,11 +676,13 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 }
 
 func printComments(w http.ResponseWriter, db *sql.DB, parentid int64, level int) {
-	s := `SELECT e.entry_id, e.body, e.createdt, u.user_id, u.username, uparent.username  
+	maxindent := 5
+
+	s := `SELECT e.entry_id, e.body, e.createdt, u.user_id, u.username, uparent.user_id, uparent.username  
 FROM entry AS e 
 LEFT OUTER JOIN user u ON e.user_id = u.user_id 
-LEFT OUTER JOIN entry parent ON e.parent_id = parent.entry_id 
-LEFT OUTER JOIN user uparent ON uparent.user_id = parent.user_id
+LEFT OUTER JOIN entry p ON e.parent_id = p.entry_id 
+LEFT OUTER JOIN user uparent ON uparent.user_id = p.user_id
 WHERE e.thing = 1 AND e.parent_id = ? 
 ORDER BY e.entry_id`
 	rows, err := db.Query(s, parentid)
@@ -552,11 +693,16 @@ ORDER BY e.entry_id`
 	var reply Entry
 	var u, uparent User
 	for rows.Next() {
-		rows.Scan(&reply.Entryid, &reply.Body, &reply.Createdt, &u.Userid, &u.Username, &uparent.Username)
+		rows.Scan(&reply.Entryid, &reply.Body, &reply.Createdt, &u.Userid, &u.Username, &uparent.Userid, &uparent.Username)
 		sreplydt := parseIsoDate(reply.Createdt)
-		replyurl := fmt.Sprintf("/item/?id=%d", reply.Entryid)
+		replyurl := createItemUrl(reply.Entryid)
 
-		fmt.Fprintf(w, "<div class=\"entry-comment\" style=\"padding-left: %drem\">\n", level*2)
+		// Limit the indents to maxindent
+		nindent := level
+		if nindent > maxindent {
+			nindent = maxindent
+		}
+		fmt.Fprintf(w, "<div class=\"entry-comment\" style=\"padding-left: %drem\">\n", nindent*2)
 		fmt.Fprintf(w, "  <p class=\"byline mb-xs\">%s <a href=\"%s\">%s</a></p>\n", u.Username, replyurl, sreplydt)
 		fmt.Fprintf(w, "  <div class=\"entry-body content mt-sm mb-sm\">\n")
 		if level >= 1 {
@@ -564,14 +710,9 @@ ORDER BY e.entry_id`
 		}
 		fmt.Fprintf(w, parseMarkdown(reply.Body))
 		fmt.Fprintf(w, "  </div>\n")
-		fmt.Fprintf(w, "  <p class=\"text-xs mb-base\"><a href=\"#\">reply</a></p>\n")
+		fmt.Fprintf(w, "  <p class=\"text-xs mb-base\"><a href=\"%s\">reply</a></p>\n", createItemUrl(reply.Entryid))
 		fmt.Fprintf(w, "</div>\n")
 
-		// Indent any replies, but only up to 2nd level indent.
-		if level == 0 {
-			printComments(w, db, reply.Entryid, level+1)
-		} else {
-			printComments(w, db, reply.Entryid, level)
-		}
+		printComments(w, db, reply.Entryid, level+1)
 	}
 }
