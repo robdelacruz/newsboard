@@ -94,6 +94,7 @@ Initialize new newsboard file:
 	http.HandleFunc("/logout/", logoutHandler(db))
 	http.HandleFunc("/", indexHandler(db))
 	http.HandleFunc("/item/", itemHandler(db))
+	http.HandleFunc("/submit/", submitHandler(db))
 	fmt.Printf("Listening on %s...\n", port)
 	err = http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
 	log.Fatal(err)
@@ -303,7 +304,7 @@ func printPageNav(w http.ResponseWriter, login *User) {
 	fmt.Fprintf(w, "<ul class=\"line-menu\">\n")
 	fmt.Fprintf(w, "  <li><a href=\"#\">latest</a></li>\n")
 	if login.Userid != -1 && login.Active {
-		fmt.Fprintf(w, "  <li><a href=\"#\">submit</a></li>\n")
+		fmt.Fprintf(w, "  <li><a href=\"/submit/\">submit</a></li>\n")
 	}
 	fmt.Fprintf(w, "</ul>\n")
 	fmt.Fprintf(w, "</div>\n")
@@ -443,7 +444,13 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		printPageNav(w, login)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
-		s := "SELECT entry_id, title, url, createdt, u.user_id, u.username FROM entry LEFT OUTER JOIN user u ON entry.user_id = u.user_id WHERE thing = 0 ORDER BY createdt DESC"
+		s := `SELECT e.entry_id, e.title, e.url, e.createdt, 
+IFNULL(u.user_id, 0), IFNULL(u.username, ''),  
+(SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments 
+FROM entry AS e 
+LEFT OUTER JOIN user u ON e.user_id = u.user_id 
+WHERE thing = 0 
+ORDER BY createdt DESC`
 		rows, err := db.Query(s)
 		if err != nil {
 			log.Fatal(err)
@@ -453,8 +460,9 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "<ul class=\"vertical-list\">\n")
 		var u User
 		var e Entry
+		var ncomments int
 		for rows.Next() {
-			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username)
+			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username, &ncomments)
 			screatedt := parseIsoDate(e.Createdt)
 			itemurl := createItemUrl(e.Entryid)
 			entryurl := e.Url
@@ -470,7 +478,7 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 			fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
 			fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
-			fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", itemurl, 109)
+			fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(&e, ncomments))
 			fmt.Fprintf(w, "</ul>\n")
 
 			fmt.Fprintf(w, "</li>\n")
@@ -482,6 +490,22 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
+func getCountUnit(e *Entry, nchildren int) string {
+	if e.Thing == SUBMISSION {
+		if nchildren == 1 {
+			return "comment"
+		} else {
+			return "comments"
+		}
+	} else {
+		if nchildren == 1 {
+			return "reply"
+		} else {
+			return "replies"
+		}
+	}
+}
+
 func validateIdParm(w http.ResponseWriter, id int64) bool {
 	if id == -1 {
 		http.Error(w, "Not found.", 404)
@@ -490,14 +514,16 @@ func validateIdParm(w http.ResponseWriter, id int64) bool {
 	return true
 }
 
-func queryEntry(db *sql.DB, entryid int64) (*Entry, *User, *Entry, error) {
+func queryEntry(db *sql.DB, entryid int64) (*Entry, *User, *Entry, int, error) {
 	var u User
 	var e Entry
 	var p Entry // parent
+	var ncomments int
 
 	s := `SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, 
 IFNULL(p.entry_id, 0), IFNULL(p.thing, 0), IFNULL(p.title, ''), IFNULL(p.url, ''), IFNULL(p.body, ''), IFNULL(p.createdt, ''), 
-IFNULL(u.user_id, 0), IFNULL(u.username, ''), IFNULL(u.active, 0), IFNULL(u.email, '') 
+IFNULL(u.user_id, 0), IFNULL(u.username, ''), IFNULL(u.active, 0), IFNULL(u.email, ''),  
+(SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments 
 FROM entry e 
 LEFT OUTER JOIN user u ON e.user_id = u.user_id 
 LEFT OUTER JOIN entry p ON e.parent_id = p.entry_id 
@@ -505,15 +531,15 @@ WHERE e.entry_id = ?`
 	row := db.QueryRow(s, entryid)
 	err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt,
 		&p.Entryid, &p.Thing, &p.Title, &p.Url, &p.Body, &p.Createdt,
-		&u.Userid, &u.Username, &u.Active, &u.Email)
+		&u.Userid, &u.Username, &u.Active, &u.Email, &ncomments)
 
-	return &e, &u, &p, err
+	return &e, &u, &p, ncomments, err
 }
 
 func queryRootEntry(db *sql.DB, entryid int64) (*Entry, error) {
 	nIteration := 0
 	for {
-		e, _, p, err := queryEntry(db, entryid)
+		e, _, p, _, err := queryEntry(db, entryid)
 		if err != nil {
 			return nil, err
 		}
@@ -570,7 +596,7 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		if !validateIdParm(w, entryid) {
 			return
 		}
-		e, u, p, err := queryEntry(db, entryid)
+		e, u, p, ncomments, err := queryEntry(db, entryid)
 		if handleDbErr(w, err, "itemHandler") {
 			return
 		}
@@ -624,9 +650,9 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 		fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
 		fmt.Fprintf(w, "  <li>%s</li>\n", parseIsoDate(e.Createdt))
-		if e.Thing == SUBMISSION {
-			ncomments := 5
-			fmt.Fprintf(w, "  <li><a href=\"%s\">%d comments</a></li>\n", itemurl, ncomments)
+
+		if ncomments > 0 {
+			fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(e, ncomments))
 		}
 		if e.Thing == COMMENT {
 			parenturl := createItemUrl(p.Entryid)
@@ -676,7 +702,7 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 }
 
 func printComments(w http.ResponseWriter, db *sql.DB, parentid int64, level int) {
-	maxindent := 5
+	maxindent := 1
 
 	s := `SELECT e.entry_id, e.body, e.createdt, u.user_id, u.username, uparent.user_id, uparent.username  
 FROM entry AS e 
@@ -714,5 +740,93 @@ ORDER BY e.entry_id`
 		fmt.Fprintf(w, "</div>\n")
 
 		printComments(w, db, reply.Entryid, level+1)
+	}
+}
+
+func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		login := getLoginUser(r, db)
+
+		var e Entry
+
+		var errmsg string
+		if r.Method == "POST" {
+			if !validateLogin(w, login) {
+				return
+			}
+
+			for {
+				e.Title = strings.TrimSpace(r.FormValue("title"))
+				e.Url = strings.TrimSpace(r.FormValue("url"))
+				e.Body = strings.TrimSpace(r.FormValue("body"))
+				if e.Title == "" {
+					errmsg = "Please enter a title."
+					break
+				}
+				if e.Url == "" && e.Body == "" {
+					errmsg = "Please enter a url or text writeup."
+					break
+				}
+
+				e.Body = strings.ReplaceAll(e.Body, "\r", "") // CRLF => CR
+				e.Createdt = time.Now().Format(time.RFC3339)
+
+				s := "INSERT INTO entry (thing, title, url, body, createdt, user_id) VALUES (?, ?, ?, ?, ?, ?)"
+				result, err := sqlexec(db, s, SUBMISSION, e.Title, e.Url, parseMarkdown(e.Body), e.Createdt, login.Userid)
+				if err != nil {
+					log.Printf("DB error creating submission (%s)\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+				newid, err := result.LastInsertId()
+				if err != nil {
+					http.Redirect(w, r, "/", http.StatusSeeOther)
+					return
+				}
+				http.Redirect(w, r, createItemUrl(newid), http.StatusSeeOther)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, login)
+		fmt.Fprintf(w, "<section class=\"main\">\n")
+
+		fmt.Fprintf(w, "<form class=\"simpleform mb-2xl\" method=\"post\" action=\"/submit/\">\n")
+		if login.Userid == -1 || !login.Active {
+			fmt.Fprintf(w, "<div class=\"control text-sm text-grayed-2 text-italic\">\n")
+			fmt.Fprintf(w, "<label><a href=\"/login/?from=%s\">Log in</a> to post a comment.</label>\n", url.QueryEscape(r.RequestURI))
+			fmt.Fprintf(w, "</div>\n")
+		} else {
+			if errmsg != "" {
+				fmt.Fprintf(w, "<div class=\"control\">\n")
+				fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+				fmt.Fprintf(w, "</div>\n")
+			}
+
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<label for=\"title\">title</label>\n")
+			fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" value=\"%s\">\n", e.Title)
+			fmt.Fprintf(w, "</div>\n")
+
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<label for=\"url\">url</label>\n")
+			fmt.Fprintf(w, "<input id=\"url\" name=\"url\" type=\"text\" size=\"60\" value=\"%s\">\n", e.Url)
+			fmt.Fprintf(w, "</div>\n")
+
+			fmt.Fprintf(w, "  <div class=\"control\">\n")
+			fmt.Fprintf(w, "    <label for=\"body\">text</label>\n")
+			fmt.Fprintf(w, "    <textarea id=\"body\" name=\"body\" rows=\"6\" cols=\"60\">%s</textarea>\n", e.Body)
+			fmt.Fprintf(w, "  </div>\n")
+
+			fmt.Fprintf(w, "  <div class=\"control\">\n")
+			fmt.Fprintf(w, "    <button class=\"submit\">submit</button>\n")
+			fmt.Fprintf(w, "  </div>\n")
+		}
+		fmt.Fprintf(w, "</form>\n")
+
+		fmt.Fprintf(w, "</section>\n")
+		printPageFoot(w)
 	}
 }
