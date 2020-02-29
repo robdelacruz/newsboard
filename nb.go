@@ -474,6 +474,13 @@ ORDER BY createdt DESC`
 
 			fmt.Fprintf(w, "<div class=\"entry-title\">\n")
 			fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", entryurl, e.Title)
+			if e.Url != "" {
+				urllink, err := url.Parse(e.Url)
+				urlhostname := strings.TrimPrefix(urllink.Hostname(), "www.")
+				if err == nil {
+					fmt.Fprintf(w, " <span class=\"text-grayed-2 text-sm\">(%s)</span>\n", urlhostname)
+				}
+			}
 			fmt.Fprintf(w, "</div>\n")
 			fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 			fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
@@ -645,6 +652,13 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		if e.Thing == SUBMISSION {
 			fmt.Fprintf(w, "<div class=\"entry-title\">\n")
 			fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", entryurl, e.Title)
+			if e.Url != "" {
+				urllink, err := url.Parse(e.Url)
+				urlhostname := strings.TrimPrefix(urllink.Hostname(), "www.")
+				if err == nil {
+					fmt.Fprintf(w, " <span class=\"text-grayed-2 text-sm\">(%s)</span>\n", urlhostname)
+				}
+			}
 			fmt.Fprintf(w, "</div>\n")
 		}
 		fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
