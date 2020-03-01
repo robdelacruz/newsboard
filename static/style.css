@@ -39,9 +39,9 @@ a, a:visited {
     --fg-1: #000;
     --bg-1: #fff;
     --bg-1: #f6f6ef;
-    --grayed-0: #e2e8f0;
-    --grayed-1: #a0aec0;
-    --grayed-2: #4a5568;
+    --fade-0: #e2e8f0;
+    --fade-1: #a0aec0;
+    --fade-2: #4a5568;
 }
 
 .m-0 {margin: 0;}
@@ -70,8 +70,9 @@ a, a:visited {
 .text-lg {font-size: 1.125rem;}
 .text-xl {font-size: 1.25rem;}
 
-.text-grayed-1, .text-grayed-1 a {color: var(--grayed-1);}
-.text-grayed-2, .text-grayed-2 a {color: var(--grayed-2);}
+.text-fade-0, .text-fade-0 a {color: var(--fade-0);}
+.text-fade-1, .text-fade-1 a {color: var(--fade-1);}
+.text-fade-2, .text-fade-2 a {color: var(--fade-2);}
 .text-italic {font-style: italic;}
 
 .heading {
@@ -115,12 +116,32 @@ a, a:visited {
     font-size: 0.75rem;
 }
 .byline, .byline a {
-    color: var(--grayed-2);
+    color: var(--fade-2);
 }
 .byline a {
     text-decoration: none;
 }
 
+.entry {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+}
+.entry .col0 {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: 1rem;
+    padding-top: 0rem;
+    padding-right: 0.25rem;
+}
+.entry .col1 {
+    flex-grow: 1;
+}
+.upvote {
+    fill: var(--fade-1);
+    stroke: var(--fade-1);
+    width: 10px;
+}
 .entry-title {
     margin-bottom: 0.25rem;
     font-size: 1.125rem;
@@ -133,19 +154,21 @@ a, a:visited {
 .entry-body p:first-of-type {
     display: inline;
 }
+/* hack to put space between first and second paragraphs */
+.entry-body p:nth-of-type(2) {
+    margin-top: 0.5rem;
+}
 .entry-body .mention {
     font-weight: bold;
     font-style: italic;
 }
 .entry-comments {
 }
-.entry-comment {
-}
 
 .masthead {
     padding: 0.5rem;
     border-bottom: 1px solid #ddd;
-    background-color: var(--grayed-1);
+    background-color: var(--fade-1);
 }
 .navbar {
     display: flex;
@@ -169,7 +192,7 @@ a, a:visited {
 }
 
 .error, .warning {
-    color: var(--grayed-1);
+    color: var(--fade-1);
 }
 .success {
     color: var(--fg-1); /* green */
@@ -216,9 +239,4 @@ select {
     background-color: #aaa;
 }
 
-.upvote {
-    fill: var(--grayed-1);
-    stroke: var(--grayed-1);
-    width: 10px;
-}
 
