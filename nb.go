@@ -485,6 +485,7 @@ ORDER BY createdt DESC`
 			fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 			fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
 			fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
+			fmt.Fprintf(w, "  <li><a href=\"%s\">Like</a></li>\n", "")
 			fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(&e, ncomments))
 			fmt.Fprintf(w, "</ul>\n")
 
@@ -664,10 +665,8 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 		fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
 		fmt.Fprintf(w, "  <li>%s</li>\n", parseIsoDate(e.Createdt))
-
-		if ncomments > 0 {
-			fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(e, ncomments))
-		}
+		fmt.Fprintf(w, "  <li><a href=\"%s\">Like</a></li>\n", "")
+		fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(e, ncomments))
 		if e.Thing == COMMENT {
 			parenturl := createItemUrl(p.Entryid)
 			fmt.Fprintf(w, "  <li><a href=\"%s\">parent</a></li>\n", parenturl)
@@ -744,7 +743,7 @@ ORDER BY e.entry_id`
 		}
 		fmt.Fprintf(w, "<div class=\"entry-comment\" style=\"padding-left: %drem\">\n", nindent*2)
 		fmt.Fprintf(w, "  <p class=\"byline mb-xs\">%s <a href=\"%s\">%s</a></p>\n", u.Username, replyurl, sreplydt)
-		fmt.Fprintf(w, "  <div class=\"entry-body content mt-sm mb-sm\">\n")
+		fmt.Fprintf(w, "  <div class=\"entry-body content mt-xs mb-xs\">\n")
 		if level >= 1 {
 			fmt.Fprintf(w, "<span class=\"mention\">@%s</span> ", uparent.Username)
 		}

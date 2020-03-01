@@ -95,7 +95,7 @@ a, a:visited {
     margin-bottom: 0.5rem;
 }
 .vertical-list li {
-    margin-bottom: 1rem;
+    margin-bottom: 0.65rem;
 }
 .vertical-list .heading {
     margin-bottom: 0.25rem;
@@ -212,7 +212,13 @@ select {
 .submit {
     /*font-weight: bold;*/
 }
-
 .displayonly input, .displayonly textarea {
     background-color: #aaa;
 }
+
+.upvote {
+    fill: var(--grayed-1);
+    stroke: var(--grayed-1);
+    width: 10px;
+}
+
