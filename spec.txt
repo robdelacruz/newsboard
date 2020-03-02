@@ -20,4 +20,10 @@ To compute number of seconds since a particular time:
 
 SELECT (strftime('%s', 'now') - strftime('%s', createdt)) / 60 FROM entry;
 
+sql with random votes:
+SELECT (ABS(RANDOM()) % 100) / ((STRFTIME('%s','now')-STRFTIME('%s',e.createdt))/60/60 + 2) * ((STRFTIME('%s','now')-STRFTIME('%s',e.createdt))/60/60 + 2) FROM entry e; 
+
+custom sqlite functions in Go:
+
+https://github.com/mattn/go-sqlite3/blob/master/_example/custom_func/main.go
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -13,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	sqlite "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/russross/blackfriday.v2"
 )
@@ -42,8 +43,6 @@ type Entry struct {
 }
 
 func main() {
-	port := "8000"
-
 	os.Args = os.Args[1:]
 	sw, parms := parseArgs(os.Args)
 
@@ -84,7 +83,8 @@ Initialize new newsboard file:
 		os.Exit(1)
 	}
 
-	db, err := sql.Open("sqlite3", dbfile)
+	registerSqliteFuncs()
+	db, err := sql.Open("sqlite3_custom", dbfile)
 	if err != nil {
 		fmt.Printf("Error opening '%s' (%s)\n", dbfile, err)
 		os.Exit(1)
@@ -96,9 +96,63 @@ Initialize new newsboard file:
 	http.HandleFunc("/", indexHandler(db))
 	http.HandleFunc("/item/", itemHandler(db))
 	http.HandleFunc("/submit/", submitHandler(db))
+	port := "8000"
 	fmt.Printf("Listening on %s...\n", port)
 	err = http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
 	log.Fatal(err)
+}
+
+func registerSqliteFuncs() {
+	rand.Seed(time.Now().UnixNano())
+
+	sql.Register("sqlite3_custom", &sqlite.SQLiteDriver{
+		ConnectHook: func(con *sqlite.SQLiteConn) error {
+			err := con.RegisterFunc("pow", pow, true)
+			if err != nil {
+				return err
+			}
+			err = con.RegisterFunc("randint", randint, false)
+			if err != nil {
+				return err
+			}
+			err = con.RegisterFunc("seconds_since_epoch", seconds_since_epoch, false)
+			if err != nil {
+				return err
+			}
+			err = con.RegisterFunc("seconds_since_time", seconds_since_time, false)
+			if err != nil {
+				return err
+			}
+			err = con.RegisterFunc("hours_since_time", hours_since_time, false)
+			if err != nil {
+				return err
+			}
+			err = con.RegisterFunc("calculate_points", calculate_points, false)
+			if err != nil {
+				return err
+			}
+			return nil
+		},
+	})
+}
+func pow(n int, p float64) float64 {
+	return math.Pow(float64(n), p)
+}
+func randint(n int) int {
+	return rand.Intn(n)
+}
+func seconds_since_epoch(dt string) int64 {
+	t, _ := time.Parse(time.RFC3339, dt)
+	return t.Unix()
+}
+func seconds_since_time(dt string) int64 {
+	return time.Now().Unix() - seconds_since_epoch(dt)
+}
+func hours_since_time(dt string) int64 {
+	return seconds_since_time(dt) / 60 / 60
+}
+func calculate_points(votes int, submitdt string) float64 {
+	return float64(votes) / pow((int(hours_since_time(submitdt))+2), 1.5)
 }
 
 func parseArgs(args []string) (map[string]string, []string) {
