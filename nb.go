@@ -513,6 +513,13 @@ func getVoteCountUnit(nvotes int) string {
 	return "votes"
 }
 
+func getPointCountUnit(points int) string {
+	if points == 1 {
+		return "point"
+	}
+	return "points"
+}
+
 func printUpvote(w http.ResponseWriter) {
 	fmt.Fprintf(w, "<svg viewbox=\"0 0 100 100\" class=\"upvote\">\n")
 	fmt.Fprintf(w, "  <polygon points=\"50 15, 100 100, 0 100\"/>\n")
@@ -529,7 +536,7 @@ func printCommentMarker(w http.ResponseWriter) {
 	fmt.Fprintf(w, "</svg>\n")
 }
 
-func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, ncomments, totalvotes int, showBody bool) {
+func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, ncomments, totalvotes int, points float64, showBody bool) {
 	screatedt := parseIsoDate(e.Createdt)
 	itemurl := createItemUrl(e.Entryid)
 	entryurl := e.Url
@@ -554,6 +561,8 @@ func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, 
 	}
 	fmt.Fprintf(w, "</div>\n")
 	fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
+	npoints := int(math.Floor(points))
+	fmt.Fprintf(w, "  <li>%d %s</li>\n", npoints, getPointCountUnit(npoints))
 	fmt.Fprintf(w, "  <li>%d %s</li>\n", totalvotes, getVoteCountUnit(totalvotes))
 	fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
 	fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
@@ -661,11 +670,13 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		s := `SELECT e.entry_id, e.title, e.url, e.createdt, 
 IFNULL(u.user_id, 0), IFNULL(u.username, ''),  
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
-(SELECT COUNT(*) FROM entryvote AS ev WHERE ev.entry_id = e.entry_id) AS totalvotes 
+IFNULL(totalvotes.votes, 0),
+calculate_points(IFNULL(totalvotes.votes, 0), e.createdt) AS points
 FROM entry AS e 
 LEFT OUTER JOIN user u ON e.user_id = u.user_id 
+LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
 WHERE thing = 0 
-ORDER BY createdt DESC`
+ORDER BY points DESC`
 		rows, err := db.Query(s)
 		if err != nil {
 			log.Fatal(err)
@@ -677,10 +688,12 @@ ORDER BY createdt DESC`
 		var e Entry
 		var ncomments int
 		var totalvotes int
+		var points float64
 		for rows.Next() {
-			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username, &ncomments, &totalvotes)
+			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username, &ncomments, &totalvotes, &points)
 			fmt.Fprintf(w, "<li>\n")
-			printSubmissionEntry(w, db, &e, &u, ncomments, totalvotes, false)
+			//printSubmissionEntry(w, db, &e, &u, ncomments, totalvotes, false)
+			printSubmissionEntry(w, db, &e, &u, ncomments, totalvotes, points, false)
 			fmt.Fprintf(w, "</li>\n")
 		}
 		fmt.Fprintf(w, "</ul>\n")
@@ -698,29 +711,31 @@ func validateIdParm(w http.ResponseWriter, id int64) bool {
 	return true
 }
 
-func queryEntry(db *sql.DB, entryid int64) (*Entry, *User, *Entry, int, int, error) {
+func queryEntry(db *sql.DB, entryid int64) (*Entry, *User, *Entry, int, int, float64, error) {
 	var u User
 	var e Entry
 	var p Entry // parent
 	var ncomments int
 	var totalvotes int
+	var points float64
 
 	s := `SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, 
 IFNULL(p.entry_id, 0), IFNULL(p.thing, 0), IFNULL(p.title, ''), IFNULL(p.url, ''), IFNULL(p.body, ''), IFNULL(p.createdt, ''), 
 IFNULL(u.user_id, 0), IFNULL(u.username, ''), IFNULL(u.active, 0), IFNULL(u.email, ''),  
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
-IFNULL(etv.totalvotes, 0)  
+IFNULL(totalvotes.votes, 0) AS votes, 
+calculate_points(IFNULL(totalvotes.votes, 0), e.createdt) AS points
 FROM entry e 
 LEFT OUTER JOIN user u ON e.user_id = u.user_id 
-LEFT OUTER JOIN entrytotalvotes etv ON e.entry_id = etv.entry_id 
+LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
 LEFT OUTER JOIN entry p ON e.parent_id = p.entry_id 
 WHERE e.entry_id = ?`
 	row := db.QueryRow(s, entryid)
 	err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt,
 		&p.Entryid, &p.Thing, &p.Title, &p.Url, &p.Body, &p.Createdt,
-		&u.Userid, &u.Username, &u.Active, &u.Email, &ncomments, &totalvotes)
+		&u.Userid, &u.Username, &u.Active, &u.Email, &ncomments, &totalvotes, &points)
 
-	return &e, &u, &p, ncomments, totalvotes, err
+	return &e, &u, &p, ncomments, totalvotes, points, err
 }
 
 func queryRootEntry(db *sql.DB, entryid int64) (*Entry, error) {
@@ -791,7 +806,7 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		if !validateIdParm(w, entryid) {
 			return
 		}
-		e, u, p, ncomments, totalvotes, err := queryEntry(db, entryid)
+		e, u, p, ncomments, totalvotes, points, err := queryEntry(db, entryid)
 		if handleDbErr(w, err, "itemHandler") {
 			return
 		}
@@ -833,7 +848,7 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		if e.Thing == SUBMISSION {
-			printSubmissionEntry(w, db, e, u, ncomments, totalvotes, true)
+			printSubmissionEntry(w, db, e, u, ncomments, totalvotes, points, true)
 		} else if e.Thing == COMMENT {
 			printCommentEntry(w, db, e, u, p, ncomments)
 		}
