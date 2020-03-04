@@ -24,6 +24,12 @@ p, ul, li, h1, h2, h3, h4 {
 a, a:visited {
     color: var(--fg-1);
 }
+.underline {
+    text-decoration: underline;
+}
+.no-underline {
+    text-decoration: none;
+}
 
 .flex-row {
     display: flex;
@@ -141,26 +147,6 @@ a, a:visited {
     fill: var(--fade-1);
     stroke: var(--fade-1);
     width: 10px;
-}
-.entry-title {
-    margin-bottom: 0.25rem;
-    font-size: 1.125rem;
-}
-.entry-title a {
-    text-decoration: none;
-}
-.entry-body {
-}
-.entry-body p:first-of-type {
-    display: inline;
-}
-/* hack to put space between first and second paragraphs */
-.entry-body p:nth-of-type(2) {
-    margin-top: 0.5rem;
-}
-.entry-body .mention {
-    font-weight: bold;
-    font-style: italic;
 }
 .entry-comments {
 }

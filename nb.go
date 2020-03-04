@@ -543,8 +543,8 @@ func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, 
 	fmt.Fprintf(w, "</div>\n")
 
 	fmt.Fprintf(w, "<div class=\"col1\">\n")
-	fmt.Fprintf(w, "<div class=\"entry-title\">\n")
-	fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", entryurl, e.Title)
+	fmt.Fprintf(w, "<div class=\"mb-xs text-lg\">\n")
+	fmt.Fprintf(w, "  <a class=\"no-underline\" href=\"%s\">%s</a>\n", entryurl, e.Title)
 	if e.Url != "" {
 		urllink, err := url.Parse(e.Url)
 		urlhostname := strings.TrimPrefix(urllink.Hostname(), "www.")
@@ -561,7 +561,7 @@ func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, 
 	fmt.Fprintf(w, "</ul>\n")
 
 	if showBody {
-		fmt.Fprintf(w, "<div class=\"entry-body content mt-base mb-base\">\n")
+		fmt.Fprintf(w, "<div class=\"content mt-base mb-base\">\n")
 		fmt.Fprintf(w, parseMarkdown(e.Body))
 		fmt.Fprintf(w, "</div>\n")
 	}
@@ -603,7 +603,7 @@ func printCommentEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, par
 	}
 	fmt.Fprintf(w, "</ul>\n")
 
-	fmt.Fprintf(w, "<div class=\"entry-body content mt-base mb-base\">\n")
+	fmt.Fprintf(w, "<div class=\"content mt-base mb-base\">\n")
 	fmt.Fprintf(w, parseMarkdown(e.Body))
 	fmt.Fprintf(w, "</div>\n")
 
@@ -634,11 +634,13 @@ func printComment(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, uparent 
 	fmt.Fprintf(w, "<div class=\"col1\">\n")
 	fmt.Fprintf(w, "  <p class=\"byline mb-xs\">%s <a href=\"%s\">%s</a></p>\n", u.Username, itemurl, screatedt)
 
-	fmt.Fprintf(w, "  <div class=\"entry-body content mt-xs mb-xs\">\n")
+	fmt.Fprintf(w, "  <div class=\"content mt-xs mb-xs\">\n")
+	body := e.Body
 	if level >= 1 {
-		fmt.Fprintf(w, "<span class=\"mention\">@%s</span> ", uparent.Username)
+		//		fmt.Fprintf(w, "<span class=\"mention\">@%s</span> ", uparent.Username)
+		body = fmt.Sprintf("***@%s*** %s", uparent.Username, e.Body)
 	}
-	fmt.Fprintf(w, parseMarkdown(e.Body))
+	fmt.Fprintf(w, parseMarkdown(body))
 	fmt.Fprintf(w, "</div>\n")
 
 	fmt.Fprintf(w, "  <p class=\"text-xs mb-base\"><a href=\"%s\">reply</a></p>\n", createItemUrl(e.Entryid))
