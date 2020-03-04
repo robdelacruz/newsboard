@@ -529,7 +529,7 @@ func printCommentMarker(w http.ResponseWriter) {
 	fmt.Fprintf(w, "</svg>\n")
 }
 
-func printEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, p *Entry, ncomments, totalvotes int, showBody bool) {
+func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, ncomments, totalvotes int, showBody bool) {
 	screatedt := parseIsoDate(e.Createdt)
 	itemurl := createItemUrl(e.Entryid)
 	entryurl := e.Url
@@ -539,48 +539,25 @@ func printEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, p *Entry, 
 
 	fmt.Fprintf(w, "<section class=\"entry\">\n")
 	fmt.Fprintf(w, "<div class=\"col0\">\n")
-	if e.Thing == SUBMISSION {
-		printUpvote(w)
-	} else {
-		printCommentMarker(w)
-	}
+	printUpvote(w)
 	fmt.Fprintf(w, "</div>\n")
 
 	fmt.Fprintf(w, "<div class=\"col1\">\n")
-	if e.Thing == SUBMISSION {
-		fmt.Fprintf(w, "<div class=\"entry-title\">\n")
-		fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", entryurl, e.Title)
-		if e.Url != "" {
-			urllink, err := url.Parse(e.Url)
-			urlhostname := strings.TrimPrefix(urllink.Hostname(), "www.")
-			if err == nil {
-				fmt.Fprintf(w, " <span class=\"text-fade-2 text-sm\">(%s)</span>\n", urlhostname)
-			}
+	fmt.Fprintf(w, "<div class=\"entry-title\">\n")
+	fmt.Fprintf(w, "  <a href=\"%s\">%s</a>\n", entryurl, e.Title)
+	if e.Url != "" {
+		urllink, err := url.Parse(e.Url)
+		urlhostname := strings.TrimPrefix(urllink.Hostname(), "www.")
+		if err == nil {
+			fmt.Fprintf(w, " <span class=\"text-fade-2 text-sm\">(%s)</span>\n", urlhostname)
 		}
-		fmt.Fprintf(w, "</div>\n")
 	}
+	fmt.Fprintf(w, "</div>\n")
 	fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
-	if e.Thing == SUBMISSION {
-		fmt.Fprintf(w, "  <li>%d %s</li>\n", totalvotes, getVoteCountUnit(totalvotes))
-	}
+	fmt.Fprintf(w, "  <li>%d %s</li>\n", totalvotes, getVoteCountUnit(totalvotes))
 	fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
 	fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
 	fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(e, ncomments))
-
-	if e.Thing == COMMENT {
-		if p != nil {
-			parenturl := createItemUrl(p.Entryid)
-			fmt.Fprintf(w, "  <li><a href=\"%s\">parent</a></li>\n", parenturl)
-		}
-
-		root, err := queryRootEntry(db, e.Entryid)
-		if err == nil {
-			rooturl := createItemUrl(root.Entryid)
-			fmt.Fprintf(w, "  <li>on: <a href=\"%s\">%s</a></li>\n", rooturl, root.Title)
-		} else {
-			log.Printf("DB error querying root entry (%s)\n", err)
-		}
-	}
 	fmt.Fprintf(w, "</ul>\n")
 
 	if showBody {
@@ -588,6 +565,47 @@ func printEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, p *Entry, 
 		fmt.Fprintf(w, parseMarkdown(e.Body))
 		fmt.Fprintf(w, "</div>\n")
 	}
+
+	fmt.Fprintf(w, "</div>\n") // col1
+	fmt.Fprintf(w, "</section>\n")
+}
+
+func printCommentEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, parent *Entry, ncomments int) {
+	screatedt := parseIsoDate(e.Createdt)
+	itemurl := createItemUrl(e.Entryid)
+	entryurl := e.Url
+	if entryurl == "" {
+		entryurl = itemurl
+	}
+
+	fmt.Fprintf(w, "<section class=\"entry\">\n")
+	fmt.Fprintf(w, "<div class=\"col0\">\n")
+	printCommentMarker(w)
+	fmt.Fprintf(w, "</div>\n")
+
+	fmt.Fprintf(w, "<div class=\"col1\">\n")
+	fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
+	fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
+	fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
+	fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(e, ncomments))
+
+	if parent != nil {
+		parenturl := createItemUrl(parent.Entryid)
+		fmt.Fprintf(w, "  <li><a href=\"%s\">parent</a></li>\n", parenturl)
+	}
+
+	root, err := queryRootEntry(db, e.Entryid)
+	if err == nil {
+		rooturl := createItemUrl(root.Entryid)
+		fmt.Fprintf(w, "  <li>on: <a href=\"%s\">%s</a></li>\n", rooturl, root.Title)
+	} else {
+		log.Printf("DB error querying root entry (%s)\n", err)
+	}
+	fmt.Fprintf(w, "</ul>\n")
+
+	fmt.Fprintf(w, "<div class=\"entry-body content mt-base mb-base\">\n")
+	fmt.Fprintf(w, parseMarkdown(e.Body))
+	fmt.Fprintf(w, "</div>\n")
 
 	fmt.Fprintf(w, "</div>\n") // col1
 	fmt.Fprintf(w, "</section>\n")
@@ -641,10 +659,9 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		s := `SELECT e.entry_id, e.title, e.url, e.createdt, 
 IFNULL(u.user_id, 0), IFNULL(u.username, ''),  
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
-IFNULL(etv.totalvotes, 0) 
+(SELECT COUNT(*) FROM entryvote AS ev WHERE ev.entry_id = e.entry_id) AS totalvotes 
 FROM entry AS e 
 LEFT OUTER JOIN user u ON e.user_id = u.user_id 
-LEFT OUTER JOIN entrytotalvotes etv ON e.entry_id = etv.entry_id 
 WHERE thing = 0 
 ORDER BY createdt DESC`
 		rows, err := db.Query(s)
@@ -661,7 +678,7 @@ ORDER BY createdt DESC`
 		for rows.Next() {
 			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username, &ncomments, &totalvotes)
 			fmt.Fprintf(w, "<li>\n")
-			printEntry(w, db, &e, &u, nil, ncomments, totalvotes, false)
+			printSubmissionEntry(w, db, &e, &u, ncomments, totalvotes, false)
 			fmt.Fprintf(w, "</li>\n")
 		}
 		fmt.Fprintf(w, "</ul>\n")
@@ -707,20 +724,28 @@ WHERE e.entry_id = ?`
 func queryRootEntry(db *sql.DB, entryid int64) (*Entry, error) {
 	nIteration := 0
 	for {
-		e, _, p, _, _, err := queryEntry(db, entryid)
+		var e, p Entry
+		s := `SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, 
+IFNULL(p.entry_id, 0), IFNULL(p.thing, 0), IFNULL(p.title, ''), IFNULL(p.url, ''), IFNULL(p.body, ''), IFNULL(p.createdt, '') 
+FROM entry e 
+LEFT OUTER JOIN entry p ON e.parent_id = p.entry_id 
+WHERE e.entry_id = ?`
+		row := db.QueryRow(s, entryid)
+		err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt,
+			&p.Entryid, &p.Thing, &p.Title, &p.Url, &p.Body, &p.Createdt)
 		if err != nil {
 			return nil, err
 		}
 
 		// If no parent, e is the root
 		if p.Entryid == 0 {
-			return e, nil
+			return &e, nil
 		}
 
 		// Set a limit to number of iterations in case there's a circular reference
 		nIteration++
 		if nIteration > 100 {
-			return e, nil
+			return &e, nil
 		}
 
 		entryid = p.Entryid
@@ -805,7 +830,11 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		printPageNav(w, login)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
-		printEntry(w, db, e, u, p, ncomments, totalvotes, true)
+		if e.Thing == SUBMISSION {
+			printSubmissionEntry(w, db, e, u, ncomments, totalvotes, true)
+		} else if e.Thing == COMMENT {
+			printCommentEntry(w, db, e, u, p, ncomments)
+		}
 
 		fmt.Fprintf(w, "<form class=\"simpleform mb-2xl\" method=\"post\" action=\"%s\">\n", itemurl)
 		if login.Userid == -1 || !login.Active {
