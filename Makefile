@@ -1,4 +1,4 @@
-all: nb
+all: nb initdata
 
 dep:
 	go get -u github.com/mattn/go-sqlite3
@@ -8,6 +8,9 @@ dep:
 nb: nb.go
 	go build -o nb nb.go
 
+initdata: initdata.go
+	go build -o initdata initdata.go
+
 clean:
-	rm -rf nb
+	rm -rf nb initdata
 
