@@ -21,7 +21,8 @@ Still under development.
 
 ## Screenshots
 
-Later.
+![newsboard list](screenshots/nb-index.png)
+![newsboard item](screenshots/nb-item1.png)
 
 ## Contact
     Twitter: @robdelacruz
