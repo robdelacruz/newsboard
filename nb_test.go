@@ -44,3 +44,10 @@ func TestSQL(t *testing.T) {
 		fmt.Printf("%d, %d, %d, %d, %d, %d, points=%f\n", entryid, npow, randomnum, secsEpoch, secsTime, hoursTime, points)
 	}
 }
+
+func TestCrypto(t *testing.T) {
+	ciphertext := encrypt([]byte("Hello World"), "password")
+	fmt.Printf("Encrypted: %x\n", ciphertext)
+	plaintext := decrypt(ciphertext, "password")
+	fmt.Printf("Decrypted: %s\n", plaintext)
+}

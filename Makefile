@@ -8,8 +8,8 @@ dep:
 nb: nb.go
 	go build -o nb nb.go
 
-initdata: initdata.go
-	go build -o initdata initdata.go
+initdata: tools/initdata.go
+	go build -o initdata tools/initdata.go
 
 clean:
 	rm -rf nb initdata

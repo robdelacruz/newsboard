@@ -1,7 +1,12 @@
 package main
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/md5"
+	cryptorand "crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -313,6 +318,23 @@ func queryUser(db *sql.DB, userid int64) *User {
 
 	s := "SELECT user_id, username, active, email FROM user WHERE user_id = ?"
 	row := db.QueryRow(s, userid)
+	err := row.Scan(&u.Userid, &u.Username, &u.Active, &u.Email)
+	if err == sql.ErrNoRows {
+		return &u
+	}
+	if err != nil {
+		fmt.Printf("queryUser() db error (%s)\n", err)
+		return &u
+	}
+	return &u
+}
+
+func queryUsername(db *sql.DB, username string) *User {
+	var u User
+	u.Userid = -1
+
+	s := "SELECT user_id, username, active, email FROM user WHERE username = ?"
+	row := db.QueryRow(s, username)
 	err := row.Scan(&u.Userid, &u.Username, &u.Active, &u.Email)
 	if err == sql.ErrNoRows {
 		return &u
@@ -998,16 +1020,16 @@ func voteHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		//todo authenticate request
 		entryid := idtoi(r.FormValue("entryid"))
-		userid := idtoi(r.FormValue("userid"))
-
 		if entryid == -1 {
 			log.Printf("voteHandler: entryid required\n")
 			http.Error(w, "entryid required", 401)
 			return
 		}
-		if userid == -1 {
-			log.Printf("voteHandler: userid required\n")
-			http.Error(w, "userid required", 401)
+
+		tok := r.FormValue("tok")
+		if tok == "" {
+			log.Printf("voteHandler: tok required\n")
+			http.Error(w, "tok required", 401)
 			return
 		}
 
@@ -1023,15 +1045,16 @@ func voteHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		u := queryUser(db, userid)
+		username := decryptString(tok)
+		u := queryUsername(db, username)
 		if u.Userid == -1 {
-			log.Printf("voteHandler: userid %d doesn't exist\n", userid)
-			http.Error(w, "userid doesn't exist", 401)
+			log.Printf("voteHandler: username %s doesn't exist\n", username)
+			http.Error(w, "user doesn't exist", 401)
 			return
 		}
 
 		s := "INSERT OR REPLACE INTO entryvote (entry_id, user_id) VALUES (?, ?)"
-		_, err = sqlexec(db, s, entryid, userid)
+		_, err = sqlexec(db, s, entryid, u.Userid)
 		if err != nil {
 			log.Printf("voteHandler: DB error (%s)\n", err)
 			http.Error(w, "Server error", 500)
@@ -1051,4 +1074,66 @@ func queryEntryOnly(db *sql.DB, entryid int64) (*Entry, error) {
 		return nil, err
 	}
 	return &e, nil
+}
+
+// createHash(), encrypt() and decrypt() copied from Nic Raboy (thanks!) source article:
+// https://www.thepolyglotdeveloper.com/2018/02/encrypt-decrypt-data-golang-application-crypto-packages/
+func createHash(key string) string {
+	hasher := md5.New()
+	hasher.Write([]byte(key))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func encrypt(data []byte, passphrase string) []byte {
+	block, _ := aes.NewCipher([]byte(createHash(passphrase)))
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		panic(err.Error())
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err = io.ReadFull(cryptorand.Reader, nonce); err != nil {
+		panic(err.Error())
+	}
+	ciphertext := gcm.Seal(nonce, nonce, data, nil)
+	return ciphertext
+}
+
+func decrypt(data []byte, passphrase string) []byte {
+	key := []byte(createHash(passphrase))
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		panic(err.Error())
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(data) < nonceSize {
+		return []byte{}
+	}
+	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		panic(err.Error())
+	}
+	return plaintext
+}
+
+//todo Make this configurable and hidden.
+const PASSPHRASE = "newsboard_passphrase"
+
+func encryptString(s string) string {
+	bs := encrypt([]byte(s), PASSPHRASE)
+	return hex.EncodeToString(bs)
+}
+
+func decryptString(tok string) string {
+	bstok, err := hex.DecodeString(tok)
+	if err != nil {
+		return ""
+	}
+	bs := decrypt(bstok, PASSPHRASE)
+	return string(bs)
 }
