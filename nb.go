@@ -96,6 +96,7 @@ Initialize new newsboard file:
 	http.HandleFunc("/", indexHandler(db))
 	http.HandleFunc("/item/", itemHandler(db))
 	http.HandleFunc("/submit/", submitHandler(db))
+	http.HandleFunc("/vote/", voteHandler(db))
 	port := "8000"
 	fmt.Printf("Listening on %s...\n", port)
 	err = http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
@@ -991,4 +992,63 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "</section>\n")
 		printPageFoot(w)
 	}
+}
+
+func voteHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		//todo authenticate request
+		entryid := idtoi(r.FormValue("entryid"))
+		userid := idtoi(r.FormValue("userid"))
+
+		if entryid == -1 {
+			log.Printf("voteHandler: entryid required\n")
+			http.Error(w, "entryid required", 401)
+			return
+		}
+		if userid == -1 {
+			log.Printf("voteHandler: userid required\n")
+			http.Error(w, "userid required", 401)
+			return
+		}
+
+		e, err := queryEntryOnly(db, entryid)
+		if err != nil {
+			log.Printf("voteHandler: DB error (%s)\n", err)
+			http.Error(w, "Server error", 500)
+			return
+		}
+		if e == nil {
+			log.Printf("voteHandler: entryid %d doesn't exist\n", entryid)
+			http.Error(w, "entryid doesn't exist", 401)
+			return
+		}
+
+		u := queryUser(db, userid)
+		if u.Userid == -1 {
+			log.Printf("voteHandler: userid %d doesn't exist\n", userid)
+			http.Error(w, "userid doesn't exist", 401)
+			return
+		}
+
+		s := "INSERT OR REPLACE INTO entryvote (entry_id, user_id) VALUES (?, ?)"
+		_, err = sqlexec(db, s, entryid, userid)
+		if err != nil {
+			log.Printf("voteHandler: DB error (%s)\n", err)
+			http.Error(w, "Server error", 500)
+			return
+		}
+
+		w.WriteHeader(200)
+	}
+}
+
+func queryEntryOnly(db *sql.DB, entryid int64) (*Entry, error) {
+	s := "SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt FROM entry e WHERE e.entry_id = ?"
+	row := db.QueryRow(s, entryid)
+	var e Entry
+	err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt)
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
 }
