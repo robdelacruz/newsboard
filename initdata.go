@@ -71,7 +71,11 @@ initdata <newsboard_file> [ask|top] [max_num_items_to_read]
 		os.Exit(1)
 	}
 
-	fmt.Printf("Reading top stories from HackerNews...\n")
+	if hnurl == hnTopUrl {
+		fmt.Printf("Reading 'Top Stories' from HackerNews...\n")
+	} else if hnurl == hnAskUrl {
+		fmt.Printf("Reading 'Ask HN' stories from HackerNews...\n")
+	}
 	resp, err := http.Get(hnurl)
 	handleErr(err)
 
