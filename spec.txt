@@ -1,15 +1,16 @@
-social bookmarking recommendation rating system:
+Functions needed:
+- Use html for submissions text? Auto-detect http:// links?
+- Create new user account
+- Vote on submissions (ajax)
+- Add admin config entry for gravity factor. Ex. (t+2) ^ g  where g is gravity.
+- Add paging (prev/more)
 
-https://stackoverflow.com/questions/71920/how-to-implement-a-digg-like-algorithm
 
-https://moz.com/blog/reddit-stumbleupon-delicious-and-hacker-news-algorithms-exposed
-
-Formula:
+Hackernews points formula
+-------------------------
 (p - 1) / (t + 2)^1.5
 
-Description:
-Votes divided by age factor
-
+Votes divided by age (gravity) factor
 p = votes (points) from users.
 t = time since submission in hours.
 
@@ -17,13 +18,8 @@ p is subtracted by 1 to negate submitters vote.
 age factor is (time since submission in hours plus two) to the power of 1.5.
 
 To compute number of seconds since a particular time:
-
 SELECT (strftime('%s', 'now') - strftime('%s', createdt)) / 60 FROM entry;
 
-sql with random votes:
-SELECT (ABS(RANDOM()) % 100) / ((STRFTIME('%s','now')-STRFTIME('%s',e.createdt))/60/60 + 2) * ((STRFTIME('%s','now')-STRFTIME('%s',e.createdt))/60/60 + 2) FROM entry e; 
-
 custom sqlite functions in Go:
-
 https://github.com/mattn/go-sqlite3/blob/master/_example/custom_func/main.go
 
