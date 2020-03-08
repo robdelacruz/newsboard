@@ -529,13 +529,6 @@ func getCountUnit(e *Entry, nchildren int) string {
 	}
 }
 
-func getVoteCountUnit(nvotes int) string {
-	if nvotes == 1 {
-		return "vote"
-	}
-	return "votes"
-}
-
 func getPointCountUnit(points int) string {
 	if points == 1 {
 		return "point"
@@ -543,18 +536,15 @@ func getPointCountUnit(points int) string {
 	return "points"
 }
 
-func printUpvote(w http.ResponseWriter) {
-	fmt.Fprintf(w, "<svg viewbox=\"0 0 100 100\" class=\"upvote\">\n")
+func printUpvote(w http.ResponseWriter, nvotes int) {
+	fmt.Fprintf(w, "<svg viewbox=\"0 0 100 100\" class=\"upvote mx-auto mb-xs\">\n")
 	fmt.Fprintf(w, "  <polygon points=\"50 15, 100 100, 0 100\"/>\n")
 	fmt.Fprintf(w, "</svg>\n")
-
-	//	if nvotes > 0 {
-	//		fmt.Fprintf(w, "<span class=\"text-sm text-fade-2\">+%d</span>\n", nvotes)
-	//	}
+	fmt.Fprintf(w, "<div class=\"mx-auto text-fade-2 text-sm\">%d</div>\n", nvotes)
 }
 
 func printCommentMarker(w http.ResponseWriter) {
-	fmt.Fprintf(w, "<svg viewbox=\"0 0 100 100\" class=\"upvote comment\">\n")
+	fmt.Fprintf(w, "<svg viewbox=\"0 0 100 100\" class=\"upvote\">\n")
 	fmt.Fprintf(w, "  <rect x=\"25\" y=\"25\" width=\"40\" height=\"40\"/>\n")
 	fmt.Fprintf(w, "</svg>\n")
 }
@@ -569,7 +559,7 @@ func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, 
 
 	fmt.Fprintf(w, "<section class=\"entry\">\n")
 	fmt.Fprintf(w, "<div class=\"col0\">\n")
-	printUpvote(w)
+	printUpvote(w, totalvotes)
 	fmt.Fprintf(w, "</div>\n")
 
 	fmt.Fprintf(w, "<div class=\"col1\">\n")
@@ -586,7 +576,6 @@ func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, 
 	fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 	npoints := int(math.Floor(points))
 	fmt.Fprintf(w, "  <li>%d %s</li>\n", npoints, getPointCountUnit(npoints))
-	fmt.Fprintf(w, "  <li>%d %s</li>\n", totalvotes, getVoteCountUnit(totalvotes))
 	fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
 	fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
 	fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(e, ncomments))
@@ -611,7 +600,7 @@ func printCommentEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, par
 	}
 
 	fmt.Fprintf(w, "<section class=\"entry\">\n")
-	fmt.Fprintf(w, "<div class=\"col0\">\n")
+	fmt.Fprintf(w, "<div class=\"col0-comment\">\n")
 	printCommentMarker(w)
 	fmt.Fprintf(w, "</div>\n")
 
@@ -659,7 +648,7 @@ func printComment(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, uparent 
 	}
 	fmt.Fprintf(w, "<section class=\"entry\" style=\"padding-left: %drem\">\n", nindent*2)
 
-	fmt.Fprintf(w, "<div class=\"col0\">\n")
+	fmt.Fprintf(w, "<div class=\"col0-comment\">\n")
 	printCommentMarker(w)
 	fmt.Fprintf(w, "</div>\n")
 
