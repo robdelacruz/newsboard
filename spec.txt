@@ -4,6 +4,7 @@ Functions needed:
 - Vote on submissions (ajax)
 - Add admin config entry for gravity factor. Ex. (t+2) ^ g  where g is gravity.
 - Add paging (prev/more)
+- Moderator functions: moderator users can delete/edit submissions.
 
 
 Hackernews points formula
