@@ -161,6 +161,9 @@ a, a:visited {
     stroke: var(--fade-1);
     width: 10px;
 }
+.upvote.voted {
+    fill: var(--fg-1);
+}
 .entry-comments {
 }
 
