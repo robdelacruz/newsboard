@@ -7,6 +7,7 @@ import (
 	cryptorand "crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +47,12 @@ type Entry struct {
 	Createdt string
 	Userid   int64
 	Parentid int64
+}
+
+type VoteResult struct {
+	Entryid    int64 `json:"entryid"`
+	Userid     int64 `json:"userid"`
+	TotalVotes int   `json:"totalvotes"`
 }
 
 func main() {
@@ -102,6 +110,7 @@ Initialize new newsboard file:
 	http.HandleFunc("/item/", itemHandler(db))
 	http.HandleFunc("/submit/", submitHandler(db))
 	http.HandleFunc("/vote/", voteHandler(db))
+	http.HandleFunc("/unvote/", unvoteHandler(db))
 	port := "8000"
 	fmt.Printf("Listening on %s...\n", port)
 	err = http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
@@ -358,7 +367,7 @@ func printPageHead(w io.Writer, jsurls []string, cssurls []string) {
 		fmt.Fprintf(w, "<link rel=\"stylesheet\" type=\"text/css\" href=\"%s\">\n", cssurl)
 	}
 	for _, jsurl := range jsurls {
-		fmt.Fprintf(w, "<script src=\"%s\"></script>\n", jsurl)
+		fmt.Fprintf(w, "<script src=\"%s\" defer></script>\n", jsurl)
 	}
 	fmt.Fprintf(w, "</head>\n")
 	fmt.Fprintf(w, "<body>\n")
@@ -536,11 +545,17 @@ func getPointCountUnit(points int) string {
 	return "points"
 }
 
-func printUpvote(w http.ResponseWriter, nvotes int) {
-	fmt.Fprintf(w, "<svg viewbox=\"0 0 100 100\" class=\"upvote mx-auto mb-xs\">\n")
+func printUpvote(w http.ResponseWriter, nvotes int, selfvote int) {
+	var selfvoteclass string
+	if selfvote == 1 {
+		selfvoteclass = "selfvote "
+	}
+	fmt.Fprintf(w, "<a class=\"upvote %s mx-auto\">\n", selfvoteclass)
+	fmt.Fprintf(w, "<svg viewbox=\"0 0 100 100\">\n")
 	fmt.Fprintf(w, "  <polygon points=\"50 15, 100 100, 0 100\"/>\n")
 	fmt.Fprintf(w, "</svg>\n")
-	fmt.Fprintf(w, "<div class=\"mx-auto text-fade-2 text-sm\">%d</div>\n", nvotes)
+	fmt.Fprintf(w, "</a>\n")
+	fmt.Fprintf(w, "<div class=\"votectr mx-auto text-fade-2 text-sm\">%d</div>\n", nvotes)
 }
 
 func printCommentMarker(w http.ResponseWriter) {
@@ -549,7 +564,7 @@ func printCommentMarker(w http.ResponseWriter) {
 	fmt.Fprintf(w, "</svg>\n")
 }
 
-func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, ncomments, totalvotes int, points float64, showBody bool) {
+func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, submitter *User, login *User, ncomments, totalvotes int, selfvote int, points float64, showBody bool) {
 	screatedt := parseIsoDate(e.Createdt)
 	itemurl := createItemUrl(e.Entryid)
 	entryurl := e.Url
@@ -557,9 +572,10 @@ func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, 
 		entryurl = itemurl
 	}
 
-	fmt.Fprintf(w, "<section class=\"entry\">\n")
+	tokparms := fmt.Sprintf("%d:%d", e.Entryid, login.Userid)
+	fmt.Fprintf(w, "<section class=\"entry\" data-votetok=\"%s\">\n", encryptString(tokparms))
 	fmt.Fprintf(w, "<div class=\"col0\">\n")
-	printUpvote(w, totalvotes)
+	printUpvote(w, totalvotes, selfvote)
 	fmt.Fprintf(w, "</div>\n")
 
 	fmt.Fprintf(w, "<div class=\"col1\">\n")
@@ -576,7 +592,7 @@ func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, 
 	fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 	npoints := int(math.Floor(points))
 	fmt.Fprintf(w, "  <li>%d %s</li>\n", npoints, getPointCountUnit(npoints))
-	fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
+	fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", submitter.Username)
 	fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
 	fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(e, ncomments))
 	fmt.Fprintf(w, "</ul>\n")
@@ -675,7 +691,7 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		login := getLoginUser(r, db)
 
 		w.Header().Set("Content-Type", "text/html")
-		printPageHead(w, nil, nil)
+		printPageHead(w, []string{"/static/handlevote.js"}, nil)
 		printPageNav(w, login)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
@@ -683,13 +699,15 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 IFNULL(u.user_id, 0), IFNULL(u.username, ''),  
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
 IFNULL(totalvotes.votes, 0),
+CASE WHEN ev.entry_id IS NOT NULL THEN 1 ELSE 0 END, 
 calculate_points(IFNULL(totalvotes.votes, 0), e.createdt) AS points
 FROM entry AS e 
 LEFT OUTER JOIN user u ON e.user_id = u.user_id 
 LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
+LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ? 
 WHERE thing = 0 
 ORDER BY points DESC`
-		rows, err := db.Query(s)
+		rows, err := db.Query(s, login.Userid)
 		if err != nil {
 			log.Fatal(err)
 			return
@@ -700,12 +718,12 @@ ORDER BY points DESC`
 		var e Entry
 		var ncomments int
 		var totalvotes int
+		var selfvote int
 		var points float64
 		for rows.Next() {
-			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username, &ncomments, &totalvotes, &points)
+			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username, &ncomments, &totalvotes, &selfvote, &points)
 			fmt.Fprintf(w, "<li>\n")
-			//printSubmissionEntry(w, db, &e, &u, ncomments, totalvotes, false)
-			printSubmissionEntry(w, db, &e, &u, ncomments, totalvotes, points, false)
+			printSubmissionEntry(w, db, &e, &u, login, ncomments, totalvotes, selfvote, points, false)
 			fmt.Fprintf(w, "</li>\n")
 		}
 		fmt.Fprintf(w, "</ul>\n")
@@ -723,12 +741,13 @@ func validateIdParm(w http.ResponseWriter, id int64) bool {
 	return true
 }
 
-func queryEntry(db *sql.DB, entryid int64) (*Entry, *User, *Entry, int, int, float64, error) {
+func queryEntry(db *sql.DB, entryid int64, login *User) (*Entry, *User, *Entry, int, int, int, float64, error) {
 	var u User
 	var e Entry
 	var p Entry // parent
 	var ncomments int
 	var totalvotes int
+	var selfvote int
 	var points float64
 
 	s := `SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, 
@@ -736,18 +755,21 @@ IFNULL(p.entry_id, 0), IFNULL(p.thing, 0), IFNULL(p.title, ''), IFNULL(p.url, ''
 IFNULL(u.user_id, 0), IFNULL(u.username, ''), IFNULL(u.active, 0), IFNULL(u.email, ''),  
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
 IFNULL(totalvotes.votes, 0) AS votes, 
+CASE WHEN ev.entry_id IS NOT NULL THEN 1 ELSE 0 END, 
 calculate_points(IFNULL(totalvotes.votes, 0), e.createdt) AS points
 FROM entry e 
 LEFT OUTER JOIN user u ON e.user_id = u.user_id 
 LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
+LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ?
 LEFT OUTER JOIN entry p ON e.parent_id = p.entry_id 
 WHERE e.entry_id = ?`
-	row := db.QueryRow(s, entryid)
+	row := db.QueryRow(s, login.Userid, entryid)
 	err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt,
 		&p.Entryid, &p.Thing, &p.Title, &p.Url, &p.Body, &p.Createdt,
-		&u.Userid, &u.Username, &u.Active, &u.Email, &ncomments, &totalvotes, &points)
+		&u.Userid, &u.Username, &u.Active, &u.Email, &ncomments, &totalvotes, &selfvote,
+		&points)
 
-	return &e, &u, &p, ncomments, totalvotes, points, err
+	return &e, &u, &p, ncomments, totalvotes, selfvote, points, err
 }
 
 func queryRootEntry(db *sql.DB, entryid int64) (*Entry, error) {
@@ -818,7 +840,7 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		if !validateIdParm(w, entryid) {
 			return
 		}
-		e, u, p, ncomments, totalvotes, points, err := queryEntry(db, entryid)
+		e, u, p, ncomments, totalvotes, selfvote, points, err := queryEntry(db, entryid, login)
 		if handleDbErr(w, err, "itemHandler") {
 			return
 		}
@@ -855,12 +877,12 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		}
 
 		w.Header().Set("Content-Type", "text/html")
-		printPageHead(w, nil, nil)
+		printPageHead(w, []string{"/static/handlevote.js"}, nil)
 		printPageNav(w, login)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		if e.Thing == SUBMISSION {
-			printSubmissionEntry(w, db, e, u, ncomments, totalvotes, points, true)
+			printSubmissionEntry(w, db, e, u, login, ncomments, totalvotes, selfvote, points, true)
 		} else if e.Thing == COMMENT {
 			printCommentEntry(w, db, e, u, p, ncomments)
 		}
@@ -1005,20 +1027,36 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
+func decryptVoteTok(tok string) (int64, int64) {
+	// When decrypted, tok takes the format: <entryid>:<userid>.
+	// Ex. 123:12  where entryid = 123, userid = 12
+	parms := decryptString(tok)
+	sre := `^(\d+):(\d+)$`
+	re := regexp.MustCompile(sre)
+	matches := re.FindStringSubmatch(parms)
+	if matches == nil {
+		return -1, -1
+	}
+
+	entryid := idtoi(matches[1])
+	userid := idtoi(matches[2])
+	return entryid, userid
+}
+
 func voteHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		//todo authenticate request
-		entryid := idtoi(r.FormValue("entryid"))
-		if entryid == -1 {
-			log.Printf("voteHandler: entryid required\n")
-			http.Error(w, "entryid required", 401)
-			return
-		}
-
 		tok := r.FormValue("tok")
 		if tok == "" {
 			log.Printf("voteHandler: tok required\n")
 			http.Error(w, "tok required", 401)
+			return
+		}
+
+		entryid, userid := decryptVoteTok(tok)
+		if entryid == -1 || userid == -1 {
+			log.Printf("voteHandler: invalid tok format\n")
+			http.Error(w, "invalid tok format", 401)
 			return
 		}
 
@@ -1034,23 +1072,102 @@ func voteHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		username := decryptString(tok)
-		u := queryUsername(db, username)
+		u := queryUser(db, userid)
 		if u.Userid == -1 {
-			log.Printf("voteHandler: username %s doesn't exist\n", username)
+			log.Printf("voteHandler: userid %d doesn't exist\n", userid)
 			http.Error(w, "user doesn't exist", 401)
 			return
 		}
 
 		s := "INSERT OR REPLACE INTO entryvote (entry_id, user_id) VALUES (?, ?)"
-		_, err = sqlexec(db, s, entryid, u.Userid)
+		_, err = sqlexec(db, s, entryid, userid)
 		if err != nil {
 			log.Printf("voteHandler: DB error (%s)\n", err)
 			http.Error(w, "Server error", 500)
 			return
 		}
 
+		var votes int
+		s = "SELECT IFNULL(totalvotes.votes, 0) AS votes FROM entry e LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id WHERE e.entry_id = ?"
+		row := db.QueryRow(s, entryid)
+		err = row.Scan(&votes)
+		if err != nil {
+			log.Printf("voteHandler: DB error (%s)\n", err)
+			votes = -1
+		}
+
+		vr := VoteResult{
+			Entryid:    entryid,
+			Userid:     userid,
+			TotalVotes: votes,
+		}
+		bs, _ := json.Marshal(vr)
 		w.WriteHeader(200)
+		w.Write(bs)
+	}
+}
+
+func unvoteHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		//todo authenticate request
+		tok := r.FormValue("tok")
+		if tok == "" {
+			log.Printf("unvoteHandler: tok required\n")
+			http.Error(w, "tok required", 401)
+			return
+		}
+
+		entryid, userid := decryptVoteTok(tok)
+		if entryid == -1 || userid == -1 {
+			log.Printf("unvoteHandler: invalid tok format\n")
+			http.Error(w, "invalid tok format", 401)
+			return
+		}
+
+		e, err := queryEntryOnly(db, entryid)
+		if err != nil {
+			log.Printf("unvoteHandler: DB error (%s)\n", err)
+			http.Error(w, "Server error", 500)
+			return
+		}
+		if e == nil {
+			log.Printf("unvoteHandler: entryid %d doesn't exist\n", entryid)
+			http.Error(w, "entryid doesn't exist", 401)
+			return
+		}
+
+		u := queryUser(db, userid)
+		if u.Userid == -1 {
+			log.Printf("unvoteHandler: userid %d doesn't exist\n", userid)
+			http.Error(w, "user doesn't exist", 401)
+			return
+		}
+
+		s := "DELETE FROM entryvote WHERE entry_id = ? AND user_id = ?"
+		_, err = sqlexec(db, s, entryid, userid)
+		if err != nil {
+			log.Printf("unvoteHandler: DB error (%s)\n", err)
+			http.Error(w, "Server error", 500)
+			return
+		}
+
+		var votes int
+		s = "SELECT IFNULL(totalvotes.votes, 0) AS votes FROM entry e LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id WHERE e.entry_id = ?"
+		row := db.QueryRow(s, entryid)
+		err = row.Scan(&votes)
+		if err != nil {
+			log.Printf("unvoteHandler: DB error (%s)\n", err)
+			votes = -1
+		}
+
+		vr := VoteResult{
+			Entryid:    entryid,
+			Userid:     userid,
+			TotalVotes: votes,
+		}
+		bs, _ := json.Marshal(vr)
+		w.WriteHeader(200)
+		w.Write(bs)
 	}
 }
 

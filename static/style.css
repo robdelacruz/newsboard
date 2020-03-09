@@ -157,12 +157,18 @@ a, a:visited {
     flex-grow: 1;
 }
 .upvote {
+    display: block;
+}
+.upvote svg {
     fill: var(--fade-1);
     stroke: var(--fade-1);
     width: 10px;
 }
-.upvote.voted {
+.upvote.selfvote svg {
     fill: var(--fg-1);
+}
+.upvote:hover {
+    cursor: pointer;
 }
 .entry-comments {
 }
