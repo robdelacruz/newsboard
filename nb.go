@@ -40,6 +40,12 @@ type User struct {
 	Email    string
 }
 
+type Site struct {
+	Title    string
+	Desc     string
+	Gravityf float64
+}
+
 type Entry struct {
 	Entryid  int64
 	Thing    int
@@ -109,6 +115,9 @@ Initialize new newsboard file:
 	http.HandleFunc("/login/", loginHandler(db))
 	http.HandleFunc("/logout/", logoutHandler(db))
 	http.HandleFunc("/createaccount/", createaccountHandler(db))
+	http.HandleFunc("/adminsetup/", adminsetupHandler(db))
+	http.HandleFunc("/edituser/", edituserHandler(db))
+	http.HandleFunc("/activateuser/", activateuserHandler(db))
 	http.HandleFunc("/", indexHandler(db))
 	http.HandleFunc("/item/", itemHandler(db))
 	http.HandleFunc("/submit/", submitHandler(db))
@@ -169,8 +178,8 @@ func seconds_since_time(dt string) int64 {
 func hours_since_time(dt string) int64 {
 	return seconds_since_time(dt) / 60 / 60
 }
-func calculate_points(votes int, submitdt string) float64 {
-	return float64(votes) / pow((int(hours_since_time(submitdt))+2), 1.5)
+func calculate_points(votes int, submitdt string, gravityf float64) float64 {
+	return float64(votes) / pow((int(hours_since_time(submitdt))+2), gravityf)
 }
 
 func parseArgs(args []string) (map[string]string, []string) {
@@ -254,6 +263,17 @@ func atoi(s string) int {
 		return -1
 	}
 	return n
+}
+
+func atof(s string) float64 {
+	if s == "" {
+		return -1.0
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return -1.0
+	}
+	return f
 }
 
 func sqlstmt(db *sql.DB, s string) *sql.Stmt {
@@ -358,6 +378,25 @@ func queryUsername(db *sql.DB, username string) *User {
 	return &u
 }
 
+func querySite(db *sql.DB) *Site {
+	var site Site
+	s := "SELECT title, desc, gravityf FROM site WHERE site_id = 1"
+	row := db.QueryRow(s)
+	err := row.Scan(&site.Title, &site.Desc, &site.Gravityf)
+	if err == sql.ErrNoRows {
+		// Site settings row not defined yet, just use default Site values.
+		site.Title = "newsboard"
+		site.Desc = ""
+		site.Gravityf = 1.5
+	} else if err != nil {
+		// DB error, log then use common site settings.
+		log.Printf("error reading site settings for siteid %d (%s)\n", 1, err)
+		site.Title = "newsboard"
+		site.Gravityf = 1.5
+	}
+	return &site
+}
+
 func printPageHead(w io.Writer, jsurls []string, cssurls []string) {
 	fmt.Fprintf(w, "<!DOCTYPE html>\n")
 	fmt.Fprintf(w, "<html>\n")
@@ -383,13 +422,16 @@ func printPageFoot(w io.Writer) {
 	fmt.Fprintf(w, "</html>\n")
 }
 
-func printPageNav(w http.ResponseWriter, login *User) {
+func printPageNav(w http.ResponseWriter, login *User, site *Site) {
 	fmt.Fprintf(w, "<header class=\"masthead mb-sm\">\n")
 	fmt.Fprintf(w, "<nav class=\"navbar\">\n")
 
 	// Menu section (left part)
 	fmt.Fprintf(w, "<div>\n")
-	title := "News Board"
+	title := site.Title
+	if title == "" {
+		title = "(no site title)"
+	}
 	fmt.Fprintf(w, "<h1 class=\"heading\"><a href=\"/\">%s</a></h1>\n", title)
 	fmt.Fprintf(w, "<ul class=\"line-menu\">\n")
 	fmt.Fprintf(w, "  <li><a href=\"#\">latest</a></li>\n")
@@ -401,11 +443,14 @@ func printPageNav(w http.ResponseWriter, login *User) {
 
 	// User section (right part)
 	fmt.Fprintf(w, "<ul class=\"line-menu right\">\n")
-	if login.Userid != -1 {
-		fmt.Fprintf(w, "<li><a href=\"#\">%s</a></li>\n", login.Username)
+	if login.Userid == -1 {
+		fmt.Fprintf(w, "<li><a href=\"/login\">login</a></li>\n")
+	} else if login.Userid == ADMIN_ID {
+		fmt.Fprintf(w, "<li><a href=\"/adminsetup/\">%s</a></li>\n", login.Username)
 		fmt.Fprintf(w, "<li><a href=\"/logout\">logout</a></li>\n")
 	} else {
-		fmt.Fprintf(w, "<li><a href=\"/login\">login</a></li>\n")
+		fmt.Fprintf(w, "<li><a href=\"#\">%s</a></li>\n", login.Username)
+		fmt.Fprintf(w, "<li><a href=\"/logout\">logout</a></li>\n")
 	}
 	fmt.Fprintf(w, "</ul>\n")
 
@@ -494,7 +539,7 @@ func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
 		printPageHead(w, nil, nil)
-		printPageNav(w, login)
+		printPageNav(w, login, querySite(db))
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/login/?from=%s\" method=\"post\">\n", from)
@@ -606,7 +651,7 @@ func createaccountHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
 		printPageHead(w, nil, nil)
-		printPageNav(w, login)
+		printPageNav(w, login, querySite(db))
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/createaccount/?from=%s\" method=\"post\">\n", from)
@@ -642,6 +687,348 @@ func createaccountHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "</form>\n")
 		fmt.Fprintf(w, "</section>\n")
 
+		printPageFoot(w)
+	}
+}
+
+func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var errmsg string
+		var title string
+		var gravityf float64
+
+		login := getLoginUser(r, db)
+		if login.Userid != ADMIN_ID {
+			http.Error(w, "admin user required", 401)
+		}
+
+		site := querySite(db)
+		title = site.Title
+		gravityf = site.Gravityf
+		if gravityf < 0 {
+			gravityf = 0.0
+		}
+
+		from := r.FormValue("from")
+
+		if r.Method == "POST" {
+			for {
+				title = strings.TrimSpace(r.FormValue("title"))
+				gravityf = atof(r.FormValue("gravityf"))
+				if title == "" {
+					errmsg = "Enter a site title"
+					break
+				}
+				if gravityf < 0 {
+					errmsg = "Enter a gravity factor (Ex. 1.5)"
+					gravityf = 0.0
+					break
+				}
+
+				s := "INSERT OR REPLACE INTO site (site_id, title, desc, gravityf) VALUES (1, ?, ?, ?)"
+				_, err := sqlexec(db, s, title, "", gravityf)
+				if err != nil {
+					fmt.Printf("adminsetup site update DB error (%s)\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
+				fromurl := "/"
+				if from != "" {
+					fromurl, _ = url.QueryUnescape(from)
+				}
+				http.Redirect(w, r, fromurl, http.StatusSeeOther)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, login, site)
+
+		fmt.Fprintf(w, "<section class=\"main\">\n")
+
+		fmt.Fprintf(w, "<form class=\"simpleform mb-xl\" action=\"/adminsetup/?from=%s\" method=\"post\">\n", from)
+		fmt.Fprintf(w, "<h1 class=\"heading\">Site Settings</h1>")
+		if errmsg != "" {
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+			fmt.Fprintf(w, "</div>\n")
+		}
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"title\">site title</label>\n")
+		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"30\" value=\"%s\">\n", title)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"gravityf\">gravity factor</label>\n")
+		fmt.Fprintf(w, "<input id=\"gravityf\" name=\"gravityf\" type=\"number\" step=\"0.001\" min=\"0\" size=\"5\" value=\"%.2f\">\n", gravityf)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<button class=\"submit\">submit</button>\n")
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "</form>\n")
+
+		fmt.Fprintf(w, "<h1 class=\"heading mb-base\">Users</h1>\n")
+		s := "SELECT user_id, username, active, email FROM user ORDER BY username"
+		rows, err := db.Query(s)
+		if err != nil {
+			log.Printf("adminsetup query users DB err (%s)\n", err)
+			errmsg = "A problem occured querying users. Please try again."
+			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+		}
+
+		var u User
+		fmt.Fprintf(w, "<ul class=\"vertical-list\">\n")
+		for rows.Next() {
+			rows.Scan(&u.Userid, &u.Username, &u.Active, &u.Email)
+			fmt.Fprintf(w, "<li>\n")
+			if u.Active {
+				fmt.Fprintf(w, "<div>%s</div>\n", u.Username)
+			} else {
+				fmt.Fprintf(w, "<div class=\"text-fade-2\">(%s)</div>\n", u.Username)
+			}
+
+			fmt.Fprintf(w, "<ul class=\"line-menu text-fade-2 text-xs\">\n")
+			fmt.Fprintf(w, "  <li><a href=\"/edituser?userid=%d&from=%s\">edit</a>\n", u.Userid, url.QueryEscape("/adminsetup/"))
+			if u.Userid != ADMIN_ID {
+				if u.Active {
+					fmt.Fprintf(w, "  <li><a href=\"/activateuser?userid=%d&setactive=0&from=%s\">deactivate</a>\n", u.Userid, url.QueryEscape("/adminsetup/"))
+				} else {
+					fmt.Fprintf(w, "  <li><a href=\"/activateuser?userid=%d&setactive=1&from=%s\">activate</a>\n", u.Userid, url.QueryEscape("/adminsetup/"))
+				}
+			}
+			fmt.Fprintf(w, "</ul>\n")
+
+			fmt.Fprintf(w, "</li>\n")
+		}
+		fmt.Fprintf(w, "</ul>\n")
+
+		fmt.Fprintf(w, "</section>\n")
+		printPageFoot(w)
+	}
+}
+
+func edituserHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var errmsg string
+		var username, email, password, password2 string
+
+		from := r.FormValue("from")
+		setpwd := r.FormValue("setpwd") // ?setpwd=1 to prompt for new password
+		userid := idtoi(r.FormValue("userid"))
+		if userid == -1 {
+			log.Printf("edit user: no userid\n")
+			http.Error(w, "user doesn't exist", 401)
+			return
+		}
+
+		login := getLoginUser(r, db)
+		if login.Userid != ADMIN_ID && login.Userid != userid {
+			log.Printf("edit user: admin or self user not logged in\n")
+			http.Error(w, "admin or self user required", 401)
+			return
+		}
+
+		u := queryUser(db, userid)
+		if u.Userid == -1 {
+			log.Printf("edit user: userid %d doesn't exist\n", userid)
+			http.Error(w, "user doesn't exist", 401)
+			return
+		}
+
+		username = u.Username
+		email = u.Email
+
+		if r.Method == "POST" {
+			username = strings.TrimSpace(r.FormValue("username"))
+			email = r.FormValue("email")
+
+			for {
+				// If username was changed,
+				// make sure the new username hasn't been taken yet.
+				if username != u.Username && isUsernameExists(db, username) {
+					errmsg = fmt.Sprintf("username '%s' already exists", username)
+					break
+				}
+
+				if username == "" {
+					errmsg = "Please enter a username."
+					break
+				}
+
+				var err error
+				if setpwd == "" {
+					s := "UPDATE user SET username = ?, email = ? WHERE user_id = ?"
+					_, err = sqlexec(db, s, username, email, userid)
+				} else {
+					// ?setpwd=1 to set new password
+					password = r.FormValue("password")
+					password2 = r.FormValue("password2")
+					if password != password2 {
+						errmsg = "re-entered password doesn't match"
+						password = ""
+						password2 = ""
+						break
+					}
+					hashedPassword := hashPassword(password)
+					s := "UPDATE user SET password = ? WHERE user_id = ?"
+					_, err = sqlexec(db, s, hashedPassword, userid)
+				}
+				if err != nil {
+					log.Printf("DB error updating user: %s\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
+				fromurl := "/"
+				if from != "" {
+					fromurl, _ = url.QueryUnescape(from)
+				}
+				http.Redirect(w, r, fromurl, http.StatusSeeOther)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, login, querySite(db))
+
+		fmt.Fprintf(w, "<div class=\"main\">\n")
+		fmt.Fprintf(w, "<section class=\"main-content\">\n")
+		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/edituser/?userid=%d&setpwd=%s&from=%s\" method=\"post\">\n", userid, setpwd, from)
+		fmt.Fprintf(w, "<h1 class=\"heading\">Edit User</h1>")
+		if errmsg != "" {
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+			fmt.Fprintf(w, "</div>\n")
+		}
+		// ?setpwd=1 to set new password
+		if setpwd != "" {
+			fmt.Fprintf(w, "<div class=\"control displayonly\">\n")
+			fmt.Fprintf(w, "<label for=\"username\">username</label>\n")
+			fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" value=\"%s\" readonly>\n", username)
+			fmt.Fprintf(w, "</div>\n")
+
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<label for=\"password\">password</label>\n")
+			fmt.Fprintf(w, "<input id=\"password\" name=\"password\" type=\"password\" size=\"30\" value=\"%s\">\n", password)
+			fmt.Fprintf(w, "</div>\n")
+
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<label for=\"password2\">re-enter password</label>\n")
+			fmt.Fprintf(w, "<input id=\"password2\" name=\"password2\" type=\"password\" size=\"30\" value=\"%s\">\n", password2)
+			fmt.Fprintf(w, "</div>\n")
+		} else {
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<label for=\"username\">username</label>\n")
+			fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" value=\"%s\">\n", username)
+			fmt.Fprintf(w, "</div>\n")
+
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<label for=\"email\">email</label>\n")
+			fmt.Fprintf(w, "<input id=\"email\" name=\"email\" type=\"email\" size=\"20\" value=\"%s\">\n", email)
+			fmt.Fprintf(w, "</div>\n")
+		}
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<button class=\"submit\">update user</button>\n")
+		fmt.Fprintf(w, "</div>\n")
+		fmt.Fprintf(w, "</form>\n")
+		fmt.Fprintf(w, "</section>\n")
+
+		fmt.Fprintf(w, "</div>\n")
+		printPageFoot(w)
+	}
+}
+
+func activateuserHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var errmsg string
+
+		from := r.FormValue("from")
+		setactive := atoi(r.FormValue("setactive"))
+		if setactive != 0 && setactive != 1 {
+			log.Printf("activate user: setactive should be 0 or 1\n")
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		userid := idtoi(r.FormValue("userid"))
+		if userid == -1 {
+			log.Printf("activate user: no userid\n")
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+
+		login := getLoginUser(r, db)
+		if login.Userid != ADMIN_ID {
+			log.Printf("activate user: admin not logged in\n")
+			http.Error(w, "admin user required", 401)
+			return
+		}
+
+		u := queryUser(db, userid)
+		if u.Userid == -1 {
+			log.Printf("activate user: userid %d doesn't exist\n", userid)
+			http.Error(w, "user doesn't exist", 401)
+			return
+		}
+
+		if r.Method == "POST" {
+			for {
+				var err error
+				s := "UPDATE user SET active = ? WHERE user_id = ?"
+				_, err = sqlexec(db, s, setactive, userid)
+				if err != nil {
+					log.Printf("DB error updating user.active: %s\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
+				fromurl := "/"
+				if from != "" {
+					fromurl, _ = url.QueryUnescape(from)
+				}
+				http.Redirect(w, r, fromurl, http.StatusSeeOther)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, login, querySite(db))
+
+		fmt.Fprintf(w, "<div class=\"main\">\n")
+		fmt.Fprintf(w, "<section class=\"main-content\">\n")
+		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/activateuser/?userid=%d&setactive=%d&from=%s\" method=\"post\">\n", userid, setactive, from)
+		if setactive == 0 {
+			fmt.Fprintf(w, "<h1 class=\"heading\">Deactivate User</h1>")
+		} else {
+			fmt.Fprintf(w, "<h1 class=\"heading\">Activate User</h1>")
+		}
+		if errmsg != "" {
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+			fmt.Fprintf(w, "</div>\n")
+		}
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"username\">username</label>\n")
+		fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" readonly value=\"%s\">\n", u.Username)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		if setactive == 0 {
+			fmt.Fprintf(w, "<button class=\"submit\">deactivate user</button>\n")
+		} else {
+			fmt.Fprintf(w, "<button class=\"submit\">activate user</button>\n")
+		}
+		fmt.Fprintf(w, "</div>\n")
+		fmt.Fprintf(w, "</form>\n")
+		fmt.Fprintf(w, "</section>\n")
+
+		fmt.Fprintf(w, "</div>\n")
 		printPageFoot(w)
 	}
 }
@@ -813,6 +1200,7 @@ func printComment(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, uparent 
 func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		login := getLoginUser(r, db)
+		site := querySite(db)
 
 		offset := atoi(r.FormValue("offset"))
 		if offset <= 0 {
@@ -825,7 +1213,7 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
 		printPageHead(w, []string{"/static/handlevote.js"}, nil)
-		printPageNav(w, login)
+		printPageNav(w, login, site)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		s := `SELECT e.entry_id, e.title, e.url, e.createdt, 
@@ -833,7 +1221,7 @@ IFNULL(u.user_id, 0), IFNULL(u.username, ''),
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
 IFNULL(totalvotes.votes, 0),
 CASE WHEN ev.entry_id IS NOT NULL THEN 1 ELSE 0 END, 
-calculate_points(IFNULL(totalvotes.votes, 0), e.createdt) AS points
+calculate_points(IFNULL(totalvotes.votes, 0), e.createdt, ?) AS points
 FROM entry AS e 
 LEFT OUTER JOIN user u ON e.user_id = u.user_id 
 LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
@@ -841,7 +1229,7 @@ LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ?
 WHERE thing = 0 
 ORDER BY points DESC
 LIMIT ? OFFSET ?`
-		rows, err := db.Query(s, login.Userid, limit, offset)
+		rows, err := db.Query(s, site.Gravityf, login.Userid, limit, offset)
 		if err != nil {
 			log.Fatal(err)
 			return
@@ -897,7 +1285,7 @@ func validateIdParm(w http.ResponseWriter, id int64) bool {
 	return true
 }
 
-func queryEntry(db *sql.DB, entryid int64, login *User) (*Entry, *User, *Entry, int, int, int, float64, error) {
+func queryEntry(db *sql.DB, entryid int64, login *User, site *Site) (*Entry, *User, *Entry, int, int, int, float64, error) {
 	var u User
 	var e Entry
 	var p Entry // parent
@@ -912,14 +1300,14 @@ IFNULL(u.user_id, 0), IFNULL(u.username, ''), IFNULL(u.active, 0), IFNULL(u.emai
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
 IFNULL(totalvotes.votes, 0) AS votes, 
 CASE WHEN ev.entry_id IS NOT NULL THEN 1 ELSE 0 END, 
-calculate_points(IFNULL(totalvotes.votes, 0), e.createdt) AS points
+calculate_points(IFNULL(totalvotes.votes, 0), e.createdt, ?) AS points
 FROM entry e 
 LEFT OUTER JOIN user u ON e.user_id = u.user_id 
 LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
 LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ?
 LEFT OUTER JOIN entry p ON e.parent_id = p.entry_id 
 WHERE e.entry_id = ?`
-	row := db.QueryRow(s, login.Userid, entryid)
+	row := db.QueryRow(s, site.Gravityf, login.Userid, entryid)
 	err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt,
 		&p.Entryid, &p.Thing, &p.Title, &p.Url, &p.Body, &p.Createdt,
 		&u.Userid, &u.Username, &u.Active, &u.Email, &ncomments, &totalvotes, &selfvote,
@@ -991,12 +1379,13 @@ func createItemUrl(id int64) string {
 func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		login := getLoginUser(r, db)
+		site := querySite(db)
 
 		entryid := idtoi(r.FormValue("id"))
 		if !validateIdParm(w, entryid) {
 			return
 		}
-		e, u, p, ncomments, totalvotes, selfvote, points, err := queryEntry(db, entryid, login)
+		e, u, p, ncomments, totalvotes, selfvote, points, err := queryEntry(db, entryid, login, site)
 		if handleDbErr(w, err, "itemHandler") {
 			return
 		}
@@ -1034,7 +1423,7 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
 		printPageHead(w, []string{"/static/handlevote.js"}, nil)
-		printPageNav(w, login)
+		printPageNav(w, login, site)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		if e.Thing == SUBMISSION {
@@ -1142,7 +1531,7 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
 		printPageHead(w, nil, nil)
-		printPageNav(w, login)
+		printPageNav(w, login, querySite(db))
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 
 		fmt.Fprintf(w, "<form class=\"simpleform mb-2xl\" method=\"post\" action=\"/submit/\">\n")

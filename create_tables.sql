@@ -3,6 +3,7 @@ BEGIN TRANSACTION;
 DROP TABLE IF EXISTS user;
 DROP TABLE IF EXISTS entry;
 DROP TABLE IF EXISTS entryvote;
+DROP TABLE IF EXISTS site;
 DROP VIEW IF EXISTS totalvotes;
 
 -- thing enum values:
@@ -16,6 +17,9 @@ CREATE TABLE user (user_id INTEGER PRIMARY KEY NOT NULL, username TEXT, password
 INSERT INTO user (user_id, username, password, active, email) VALUES (1, 'admin', '', 1, 'admin@localhost');
 
 CREATE TABLE entryvote(entry_id INTEGER NOT NULL, user_id INTEGER, PRIMARY KEY (entry_id, user_id));
+
+CREATE TABLE site (site_id INTEGER PRIMARY KEY NOT NULL, title TEXT NOT NULL, desc TEXT NOT NULL, gravityf REAL NOT NULL);
+INSERT INTO site (site_id, title, desc, gravityf) VALUES (1, 'newsboard', '', 1.0);
 
 -- view: totalvotes
 CREATE VIEW totalvotes 
