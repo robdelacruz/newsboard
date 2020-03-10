@@ -720,8 +720,7 @@ func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 					break
 				}
 				if gravityf < 0 {
-					errmsg = "Enter a gravity factor (Ex. 1.5)"
-					gravityf = 0.0
+					errmsg = "Enter a gravity factor (0.0 and above)"
 					break
 				}
 
@@ -762,7 +761,14 @@ func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"gravityf\">gravity factor</label>\n")
-		fmt.Fprintf(w, "<input id=\"gravityf\" name=\"gravityf\" type=\"number\" step=\"0.001\" min=\"0\" size=\"5\" value=\"%.2f\">\n", gravityf)
+		if gravityf >= 0 {
+			fmt.Fprintf(w, "<input id=\"gravityf\" name=\"gravityf\" type=\"number\" step=\"0.001\" min=\"0\" size=\"5\" value=\"%.2f\">\n", gravityf)
+		} else {
+			fmt.Fprintf(w, "<input id=\"gravityf\" name=\"gravityf\" type=\"number\" step=\"0.001\" min=\"0\" size=\"5\" value=\"\">\n")
+		}
+		fmt.Fprintf(w, "<p class=\"text-sm text-fade-2 text-italic mt-xs\">\n")
+		fmt.Fprintf(w, "points = num_votes / (hours_since_submission + 2) ^ gravity_factor.<br>The gravity_factor determines how quickly points decrease as time passes.\n")
+		fmt.Fprintf(w, "</p>\n")
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
