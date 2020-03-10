@@ -31,6 +31,8 @@ const ADMIN_ID = 1
 const SUBMISSION = 0
 const COMMENT = 1
 
+const SETTINGS_LIMIT = 30
+
 type User struct {
 	Userid   int64
 	Username string
@@ -812,6 +814,15 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		login := getLoginUser(r, db)
 
+		offset := atoi(r.FormValue("offset"))
+		if offset <= 0 {
+			offset = 0
+		}
+		limit := atoi(r.FormValue("limit"))
+		if limit <= 0 {
+			limit = SETTINGS_LIMIT
+		}
+
 		w.Header().Set("Content-Type", "text/html")
 		printPageHead(w, []string{"/static/handlevote.js"}, nil)
 		printPageNav(w, login)
@@ -828,8 +839,9 @@ LEFT OUTER JOIN user u ON e.user_id = u.user_id
 LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
 LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ? 
 WHERE thing = 0 
-ORDER BY points DESC`
-		rows, err := db.Query(s, login.Userid)
+ORDER BY points DESC
+LIMIT ? OFFSET ?`
+		rows, err := db.Query(s, login.Userid, limit, offset)
 		if err != nil {
 			log.Fatal(err)
 			return
@@ -842,17 +854,39 @@ ORDER BY points DESC`
 		var totalvotes int
 		var selfvote int
 		var points float64
+		nrows := 0
 		for rows.Next() {
 			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username, &ncomments, &totalvotes, &selfvote, &points)
 			fmt.Fprintf(w, "<li>\n")
 			printSubmissionEntry(w, db, &e, &u, login, ncomments, totalvotes, selfvote, points, false)
 			fmt.Fprintf(w, "</li>\n")
+			nrows++
 		}
 		fmt.Fprintf(w, "</ul>\n")
 
+		printPagingNav(w, "/?", offset, limit, nrows)
 		fmt.Fprintf(w, "</section>\n")
 		printPageFoot(w)
 	}
+}
+
+func printPagingNav(w http.ResponseWriter, baseurl string, offset, limit, nrows int) {
+	fmt.Fprintf(w, "<div class=\"flex-row text-italic mt-xl\">\n")
+	if offset > 0 {
+		prevOffset := offset - limit
+		if prevOffset < 0 {
+			prevOffset = 0
+		}
+		prevLink := fmt.Sprintf("%s&offset=%d&limit=%d", baseurl, prevOffset, limit)
+		fmt.Fprintf(w, "  <p><a href=\"%s\">Previous</a></p>\n", prevLink)
+	} else {
+		fmt.Fprintf(w, "  <p></p>\n")
+	}
+	if nrows == limit {
+		moreLink := fmt.Sprintf("%s&offset=%d&limit=%d", baseurl, offset+limit, limit)
+		fmt.Fprintf(w, "  <p><a href=\"%s\">More</a></p>\n", moreLink)
+	}
+	fmt.Fprintf(w, "</div>\n")
 }
 
 func validateIdParm(w http.ResponseWriter, id int64) bool {
