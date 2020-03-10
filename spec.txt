@@ -1,6 +1,5 @@
 Functions needed:
 - Use html for submissions text? Auto-detect http:// links?
-- Add admin config entry for gravity factor. Ex. (t+2) ^ g  where g is gravity.
 - Moderator functions: moderator users can delete/edit submissions.
 
 
