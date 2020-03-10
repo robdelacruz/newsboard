@@ -106,6 +106,7 @@ Initialize new newsboard file:
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 	http.HandleFunc("/login/", loginHandler(db))
 	http.HandleFunc("/logout/", logoutHandler(db))
+	http.HandleFunc("/createaccount/", createaccountHandler(db))
 	http.HandleFunc("/", indexHandler(db))
 	http.HandleFunc("/item/", itemHandler(db))
 	http.HandleFunc("/submit/", submitHandler(db))
@@ -421,16 +422,36 @@ func isCorrectPassword(inputPassword, hashedpwd string) bool {
 	return true
 }
 
+func hashPassword(pwd string) string {
+	hashedpwd, err := bcrypt.GenerateFromPassword([]byte(pwd), bcrypt.DefaultCost)
+	if err != nil {
+		panic(err)
+	}
+	return string(hashedpwd)
+}
+
+func loginUser(w http.ResponseWriter, userid int64) {
+	suserid := fmt.Sprintf("%d", userid)
+	c := http.Cookie{
+		Name:  "userid",
+		Value: suserid,
+		Path:  "/",
+		// Expires: time.Now().Add(24 * time.Hour),
+	}
+	http.SetCookie(w, &c)
+}
+
 func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var errmsg string
-		login := getLoginUser(r, db)
+		var username, password string
 
+		login := getLoginUser(r, db)
 		from := r.FormValue("from")
 
 		if r.Method == "POST" {
-			username := r.FormValue("username")
-			password := r.FormValue("password")
+			username = r.FormValue("username")
+			password = r.FormValue("password")
 
 			s := "SELECT user_id, password, active FROM user WHERE username = ?"
 			row := db.QueryRow(s, username, password)
@@ -458,14 +479,7 @@ func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 					break
 				}
 
-				suserid := fmt.Sprintf("%d", userid)
-				c := http.Cookie{
-					Name:  "userid",
-					Value: suserid,
-					Path:  "/",
-					// Expires: time.Now().Add(24 * time.Hour),
-				}
-				http.SetCookie(w, &c)
+				loginUser(w, userid)
 
 				fromurl := "/"
 				if from != "" {
@@ -489,19 +503,21 @@ func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			fmt.Fprintf(w, "</div>\n")
 		}
 		fmt.Fprintf(w, "<div class=\"control\">\n")
-		fmt.Fprintf(w, "<label>username</label>\n")
-		fmt.Fprintf(w, "<input name=\"username\" type=\"text\" size=\"20\">\n")
+		fmt.Fprintf(w, "<label for=\"username\">username</label>\n")
+		fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" value=\"%s\">\n", username)
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
-		fmt.Fprintf(w, "<label>password</label>\n")
-		fmt.Fprintf(w, "<input name=\"password\" type=\"password\" size=\"20\">\n")
+		fmt.Fprintf(w, "<label for=\"password\">password</label>\n")
+		fmt.Fprintf(w, "<input id=\"password\" name=\"password\" type=\"password\" size=\"20\" value=\"%s\">\n", password)
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<button class=\"submit\">login</button>\n")
 		fmt.Fprintf(w, "</div>\n")
 		fmt.Fprintf(w, "</form>\n")
+
+		fmt.Fprintf(w, "<p class=\"mt-xl\"><a href=\"/createaccount/?from=%s\">Create New Account</a></p>\n", from)
 		fmt.Fprintf(w, "</section>\n")
 
 		printPageFoot(w)
@@ -519,6 +535,112 @@ func logoutHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		http.SetCookie(w, &c)
 
 		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
+}
+
+func isUsernameExists(db *sql.DB, username string) bool {
+	s := "SELECT user_id FROM user WHERE username = ?"
+	row := db.QueryRow(s, username)
+	var userid int64
+	err := row.Scan(&userid)
+	if err == sql.ErrNoRows {
+		return false
+	}
+	if err != nil {
+		return false
+	}
+	return true
+}
+
+func createaccountHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var errmsg string
+		var username, email, password, password2 string
+
+		login := getLoginUser(r, db)
+		from := r.FormValue("from")
+
+		if r.Method == "POST" {
+			username = r.FormValue("username")
+			email = r.FormValue("email")
+			password = r.FormValue("password")
+			password2 = r.FormValue("password2")
+			for {
+				if password != password2 {
+					errmsg = "re-entered password doesn't match"
+					password = ""
+					password2 = ""
+					break
+				}
+				if isUsernameExists(db, username) {
+					errmsg = fmt.Sprintf("username '%s' already exists", username)
+					break
+				}
+
+				hashedPassword := hashPassword(password)
+				s := "INSERT INTO user (username, password, active, email) VALUES (?, ?, ?, ?);"
+				result, err := sqlexec(db, s, username, hashedPassword, 1, email)
+				if err != nil {
+					log.Printf("DB error creating user: %s\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+				newid, err := result.LastInsertId()
+				if err == nil {
+					loginUser(w, newid)
+				} else {
+					// DB doesn't support getting newly added userid, so login manually.
+					from = "/login/"
+				}
+
+				fromurl := "/"
+				if from != "" {
+					fromurl, _ = url.QueryUnescape(from)
+				}
+				http.Redirect(w, r, fromurl, http.StatusSeeOther)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, login)
+
+		fmt.Fprintf(w, "<section class=\"main\">\n")
+		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/createaccount/?from=%s\" method=\"post\">\n", from)
+		fmt.Fprintf(w, "<h1 class=\"heading\">Create Account</h1>")
+		if errmsg != "" {
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+			fmt.Fprintf(w, "</div>\n")
+		}
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"username\">username</label>\n")
+		fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" value=\"%s\">\n", username)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"email\">email</label>\n")
+		fmt.Fprintf(w, "<input id=\"email\" name=\"email\" type=\"email\" size=\"20\" value=\"%s\">\n", email)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"password\">password</label>\n")
+		fmt.Fprintf(w, "<input id=\"password\" name=\"password\" type=\"password\" size=\"20\" value=\"%s\">\n", password)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"password2\">re-enter password</label>\n")
+		fmt.Fprintf(w, "<input id=\"password2\" name=\"password2\" type=\"password\" size=\"20\" value=\"%s\">\n", password2)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<button class=\"submit\">create account</button>\n")
+		fmt.Fprintf(w, "</div>\n")
+		fmt.Fprintf(w, "</form>\n")
+		fmt.Fprintf(w, "</section>\n")
+
+		printPageFoot(w)
 	}
 }
 
