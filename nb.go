@@ -116,6 +116,7 @@ Initialize new newsboard file:
 	http.HandleFunc("/logout/", logoutHandler(db))
 	http.HandleFunc("/createaccount/", createaccountHandler(db))
 	http.HandleFunc("/adminsetup/", adminsetupHandler(db))
+	http.HandleFunc("/usersetup/", usersetupHandler(db))
 	http.HandleFunc("/edituser/", edituserHandler(db))
 	http.HandleFunc("/activateuser/", activateuserHandler(db))
 	http.HandleFunc("/", indexHandler(db))
@@ -449,7 +450,7 @@ func printPageNav(w http.ResponseWriter, login *User, site *Site) {
 		fmt.Fprintf(w, "<li><a href=\"/adminsetup/\">%s</a></li>\n", login.Username)
 		fmt.Fprintf(w, "<li><a href=\"/logout\">logout</a></li>\n")
 	} else {
-		fmt.Fprintf(w, "<li><a href=\"#\">%s</a></li>\n", login.Username)
+		fmt.Fprintf(w, "<li><a href=\"/usersetup/\">%s</a></li>\n", login.Username)
 		fmt.Fprintf(w, "<li><a href=\"/logout\">logout</a></li>\n")
 	}
 	fmt.Fprintf(w, "</ul>\n")
@@ -809,6 +810,26 @@ func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			fmt.Fprintf(w, "</li>\n")
 		}
 		fmt.Fprintf(w, "</ul>\n")
+
+		fmt.Fprintf(w, "</section>\n")
+		printPageFoot(w)
+	}
+}
+
+func usersetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		login := getLoginUser(r, db)
+		if !validateLogin(w, login) {
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, login, querySite(db))
+		fmt.Fprintf(w, "<section class=\"main\">\n")
+
+		fmt.Fprintf(w, "<p class=\"\"><a href=\"/edituser?userid=%d&from=%s\">Edit Account</a></p>\n", login.Userid, url.QueryEscape("/usersetup/"))
+		fmt.Fprintf(w, "<p class=\"mt-base\"><a href=\"/edituser?userid=%d&setpwd=1&from=%s\">Set Password</a></p>\n", login.Userid, url.QueryEscape("/usersetup/"))
 
 		fmt.Fprintf(w, "</section>\n")
 		printPageFoot(w)
