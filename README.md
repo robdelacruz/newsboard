@@ -17,8 +17,6 @@ newsboard is a bulletin board for posting stories and links. Inspired by HackerN
 
 newsboard uses a single sqlite3 database file to store all submissions, users, and site settings.
 
-Still under development.
-
 ## Screenshots
 
 ![newsboard list](screenshots/nb-index.png)
