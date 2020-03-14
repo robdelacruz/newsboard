@@ -779,10 +779,8 @@ func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "<h1 class=\"heading mb-base\">Users</h1>\n")
 		s := "SELECT user_id, username, active, email FROM user ORDER BY username"
 		rows, err := db.Query(s)
-		if err != nil {
-			log.Printf("adminsetup query users DB err (%s)\n", err)
-			errmsg = "A problem occured querying users. Please try again."
-			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+		if handleDbErr(w, err, "adminsetuphandler") {
+			return
 		}
 
 		var u User
@@ -1243,11 +1241,10 @@ LEFT OUTER JOIN user u ON e.user_id = u.user_id
 LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
 LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ? 
 WHERE thing = 0 
-ORDER BY points DESC
+ORDER BY points DESC, e.createdt DESC 
 LIMIT ? OFFSET ?`
 		rows, err := db.Query(s, site.Gravityf, login.Userid, qlimit, qoffset)
-		if err != nil {
-			log.Fatal(err)
+		if handleDbErr(w, err, "indexhandler") {
 			return
 		}
 
@@ -1299,37 +1296,6 @@ func validateIdParm(w http.ResponseWriter, id int64) bool {
 		return false
 	}
 	return true
-}
-
-func queryEntry(db *sql.DB, entryid int64, login *User, site *Site) (*Entry, *User, *Entry, int, int, int, float64, error) {
-	var u User
-	var e Entry
-	var p Entry // parent
-	var ncomments int
-	var totalvotes int
-	var selfvote int
-	var points float64
-
-	s := `SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, 
-IFNULL(p.entry_id, 0), IFNULL(p.thing, 0), IFNULL(p.title, ''), IFNULL(p.url, ''), IFNULL(p.body, ''), IFNULL(p.createdt, ''), 
-IFNULL(u.user_id, 0), IFNULL(u.username, ''), IFNULL(u.active, 0), IFNULL(u.email, ''),  
-(SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
-IFNULL(totalvotes.votes, 0) AS votes, 
-CASE WHEN ev.entry_id IS NOT NULL THEN 1 ELSE 0 END, 
-calculate_points(IFNULL(totalvotes.votes, 0), e.createdt, ?) AS points
-FROM entry e 
-LEFT OUTER JOIN user u ON e.user_id = u.user_id 
-LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
-LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ?
-LEFT OUTER JOIN entry p ON e.parent_id = p.entry_id 
-WHERE e.entry_id = ?`
-	row := db.QueryRow(s, site.Gravityf, login.Userid, entryid)
-	err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt,
-		&p.Entryid, &p.Thing, &p.Title, &p.Url, &p.Body, &p.Createdt,
-		&u.Userid, &u.Username, &u.Active, &u.Email, &ncomments, &totalvotes, &selfvote,
-		&points)
-
-	return &e, &u, &p, ncomments, totalvotes, selfvote, points, err
 }
 
 func queryRootEntry(db *sql.DB, entryid int64) (*Entry, error) {
@@ -1401,10 +1367,37 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		if !validateIdParm(w, qentryid) {
 			return
 		}
-		e, u, p, ncomments, totalvotes, selfvote, points, err := queryEntry(db, qentryid, login, site)
-		if handleDbErr(w, err, "itemHandler") {
+
+		var u User
+		var e Entry
+		var p Entry // parent
+		var ncomments int
+		var totalvotes int
+		var selfvote int
+		var points float64
+
+		s := `SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, 
+IFNULL(p.entry_id, 0), IFNULL(p.thing, 0), IFNULL(p.title, ''), IFNULL(p.url, ''), IFNULL(p.body, ''), IFNULL(p.createdt, ''), 
+IFNULL(u.user_id, 0), IFNULL(u.username, ''), IFNULL(u.active, 0), IFNULL(u.email, ''),  
+(SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
+IFNULL(totalvotes.votes, 0) AS votes, 
+CASE WHEN ev.entry_id IS NOT NULL THEN 1 ELSE 0 END, 
+calculate_points(IFNULL(totalvotes.votes, 0), e.createdt, ?) AS points
+FROM entry e 
+LEFT OUTER JOIN user u ON e.user_id = u.user_id 
+LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
+LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ?
+LEFT OUTER JOIN entry p ON e.parent_id = p.entry_id 
+WHERE e.entry_id = ?`
+		row := db.QueryRow(s, site.Gravityf, login.Userid, qentryid)
+		err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt,
+			&p.Entryid, &p.Thing, &p.Title, &p.Url, &p.Body, &p.Createdt,
+			&u.Userid, &u.Username, &u.Active, &u.Email,
+			&ncomments, &totalvotes, &selfvote, &points)
+		if handleDbErr(w, err, "itemhandler") {
 			return
 		}
+
 		itemurl := createItemUrl(e.Entryid)
 
 		var errmsg string
@@ -1443,9 +1436,9 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		if e.Thing == SUBMISSION {
-			printSubmissionEntry(w, db, e, u, login, ncomments, totalvotes, selfvote, points, true)
+			printSubmissionEntry(w, db, &e, &u, login, ncomments, totalvotes, selfvote, points, true)
 		} else if e.Thing == COMMENT {
-			printCommentEntry(w, db, e, u, p, ncomments)
+			printCommentEntry(w, db, &e, &u, &p, ncomments)
 		}
 
 		fmt.Fprintf(w, "<form class=\"simpleform mb-2xl\" method=\"post\" action=\"%s\">\n", itemurl)
@@ -1486,8 +1479,7 @@ LEFT OUTER JOIN user uparent ON uparent.user_id = p.user_id
 WHERE e.thing = 1 AND e.parent_id = ? 
 ORDER BY e.entry_id`
 	rows, err := db.Query(s, parentid)
-	if err != nil {
-		log.Fatal(err)
+	if handleDbErr(w, err, "printComments") {
 		return
 	}
 	var reply Entry
@@ -1621,7 +1613,7 @@ func voteHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		e, err := queryEntryOnly(db, entryid)
+		e, err := queryEntry(db, entryid)
 		if err != nil {
 			log.Printf("voteHandler: DB error (%s)\n", err)
 			http.Error(w, "Server error", 500)
@@ -1652,9 +1644,8 @@ func voteHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		s = "SELECT IFNULL(totalvotes.votes, 0) AS votes FROM entry e LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id WHERE e.entry_id = ?"
 		row := db.QueryRow(s, entryid)
 		err = row.Scan(&votes)
-		if err != nil {
-			log.Printf("voteHandler: DB error (%s)\n", err)
-			votes = -1
+		if handleDbErr(w, err, "votehandler") {
+			return
 		}
 
 		vr := VoteResult{
@@ -1685,7 +1676,7 @@ func unvoteHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		e, err := queryEntryOnly(db, entryid)
+		e, err := queryEntry(db, entryid)
 		if err != nil {
 			log.Printf("unvoteHandler: DB error (%s)\n", err)
 			http.Error(w, "Server error", 500)
@@ -1716,9 +1707,8 @@ func unvoteHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		s = "SELECT IFNULL(totalvotes.votes, 0) AS votes FROM entry e LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id WHERE e.entry_id = ?"
 		row := db.QueryRow(s, entryid)
 		err = row.Scan(&votes)
-		if err != nil {
-			log.Printf("unvoteHandler: DB error (%s)\n", err)
-			votes = -1
+		if handleDbErr(w, err, "unvotehandler") {
+			return
 		}
 
 		vr := VoteResult{
@@ -1732,7 +1722,7 @@ func unvoteHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-func queryEntryOnly(db *sql.DB, entryid int64) (*Entry, error) {
+func queryEntry(db *sql.DB, entryid int64) (*Entry, error) {
 	s := "SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt FROM entry e WHERE e.entry_id = ?"
 	row := db.QueryRow(s, entryid)
 	var e Entry
