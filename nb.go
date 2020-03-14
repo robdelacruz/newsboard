@@ -435,7 +435,7 @@ func printPageNav(w http.ResponseWriter, login *User, site *Site) {
 	}
 	fmt.Fprintf(w, "<h1 class=\"heading\"><a href=\"/\">%s</a></h1>\n", title)
 	fmt.Fprintf(w, "<ul class=\"line-menu\">\n")
-	fmt.Fprintf(w, "  <li><a href=\"#\">latest</a></li>\n")
+	fmt.Fprintf(w, "  <li><a href=\"/?latest=1\">latest</a></li>\n")
 	if login.Userid != -1 && login.Active {
 		fmt.Fprintf(w, "  <li><a href=\"/submit/\">submit</a></li>\n")
 	}
@@ -1224,13 +1224,19 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		if qlimit <= 0 {
 			qlimit = SETTINGS_LIMIT
 		}
+		qlatest := r.FormValue("latest")
 
 		w.Header().Set("Content-Type", "text/html")
 		printPageHead(w, []string{"/static/handlevote.js"}, nil)
 		printPageNav(w, login, site)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
-		s := `SELECT e.entry_id, e.title, e.url, e.createdt, 
+
+		orderby := "points DESC, e.createdt DESC"
+		if qlatest != "" {
+			orderby = "e.createdt DESC"
+		}
+		s := fmt.Sprintf(`SELECT e.entry_id, e.title, e.url, e.createdt, 
 IFNULL(u.user_id, 0), IFNULL(u.username, ''),  
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
 IFNULL(totalvotes.votes, 0),
@@ -1241,8 +1247,8 @@ LEFT OUTER JOIN user u ON e.user_id = u.user_id
 LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
 LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ? 
 WHERE thing = 0 
-ORDER BY points DESC, e.createdt DESC 
-LIMIT ? OFFSET ?`
+ORDER BY %s 
+LIMIT ? OFFSET ?`, orderby)
 		rows, err := db.Query(s, site.Gravityf, login.Userid, qlimit, qoffset)
 		if handleDbErr(w, err, "indexhandler") {
 			return
@@ -1265,7 +1271,8 @@ LIMIT ? OFFSET ?`
 		}
 		fmt.Fprintf(w, "</ul>\n")
 
-		printPagingNav(w, "/?", qoffset, qlimit, nrows)
+		baseurl := fmt.Sprintf("/?latest=%s", qlatest)
+		printPagingNav(w, baseurl, qoffset, qlimit, nrows)
 		fmt.Fprintf(w, "</section>\n")
 		printPageFoot(w)
 	}
