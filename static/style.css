@@ -5,42 +5,6 @@ body {
     font-family: "Verdana", "Geneva", sans-serif;
 }
 
-.body {
-    margin: 0 auto 1rem;
-    padding: 0;
-    max-width: 900px;
-    min-height: 500px;
-    color: var(--fg-1);
-    background-color: var(--bg-1);
-}
-.main {
-    padding: 0.25rem 1rem;
-}
-
-p, ul, li, h1, h2, h3, h4 {
-    margin: 0;
-    padding: 0;
-}
-a, a:visited {
-    color: var(--fg-1);
-}
-.underline {
-    text-decoration: underline;
-}
-.no-underline {
-    text-decoration: none;
-}
-
-.flex-row {
-    display: flex;
-    flex-wrap: nowrap;
-    flex-direction: row;
-    justify-content: space-between;
-}
-.box {
-    border: 1px solid #ddd;
-}
-
 :root {
     --fg-1: #000;
     --bg-1: #fff;
@@ -85,6 +49,42 @@ a, a:visited {
 .text-fade-2, .text-fade-2 a {color: var(--fade-2);}
 .text-italic {font-style: italic;}
 
+.main {
+    padding: 0.25rem 1rem;
+}
+.body {
+    margin: 0 auto 1rem;
+    padding: 0;
+    max-width: 900px;
+    min-height: 500px;
+    color: var(--fg-1);
+    background-color: var(--bg-1);
+}
+
+p, ul, li, h1, h2, h3, h4 {
+    margin: 0;
+    padding: 0;
+}
+a, a:visited {
+    color: var(--fg-1);
+}
+.underline {
+    text-decoration: underline;
+}
+.no-underline {
+    text-decoration: none;
+}
+
+.flex-row {
+    display: flex;
+    flex-wrap: nowrap;
+    flex-direction: row;
+    justify-content: space-between;
+}
+.box {
+    border: 1px solid #ddd;
+}
+
 .heading {
     font-size: 1rem;
 }
@@ -102,15 +102,8 @@ a, a:visited {
 .vertical-list {
     list-style-type: none;
 }
-.vertical-list p {
-    margin-bottom: 0.5rem;
-}
 .vertical-list li {
-    margin-bottom: 0.65rem;
-}
-.vertical-list .heading {
-    margin-bottom: 0.25rem;
-    font-size: 1rem;
+    margin-bottom: 0.5rem;
 }
 
 .line-menu {
@@ -130,47 +123,6 @@ a, a:visited {
 }
 .byline a {
     text-decoration: none;
-}
-
-.entry {
-    display: flex;
-    flex-direction: row;
-    justify-content: flex-start;
-}
-.entry .col0 {
-    flex-grow: 0;
-    flex-shrink: 0;
-    flex-basis: 2rem;
-    padding-top: 0rem;
-    padding-right: 0.50rem;
-
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-}
-.entry .col0-comment {
-    flex-grow: 0;
-    flex-shrink: 0;
-    flex-basis: 1rem;
-}
-.entry .col1 {
-    flex-grow: 1;
-}
-.upvote {
-    display: block;
-}
-.upvote svg {
-    fill: var(--fade-1);
-    stroke: var(--fade-1);
-    width: 10px;
-}
-.upvote.selfvote svg {
-    fill: var(--fg-1);
-}
-.upvote:hover {
-    cursor: pointer;
-}
-.entry-comments {
 }
 
 .masthead {
@@ -245,6 +197,48 @@ select {
 }
 .displayonly input, .displayonly textarea {
     background-color: #aaa;
+}
+
+/* newsboard-specific styles (move to separate file?) */
+.entry {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+}
+.entry .col0 {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: 2rem;
+    padding-top: 0rem;
+    padding-right: 0.50rem;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+.entry .col0-comment {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: 1rem;
+}
+.entry .col1 {
+    flex-grow: 1;
+}
+.upvote {
+    display: block;
+}
+.upvote svg {
+    fill: var(--fade-1);
+    stroke: var(--fade-1);
+    width: 10px;
+}
+.upvote.selfvote svg {
+    fill: var(--fg-1);
+}
+.upvote:hover {
+    cursor: pointer;
+}
+.entry-comments {
 }
 
 
