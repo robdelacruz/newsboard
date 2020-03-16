@@ -1027,7 +1027,7 @@ func activateuserHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
 			fmt.Fprintf(w, "</div>\n")
 		}
-		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<div class=\"control displayonly\">\n")
 		fmt.Fprintf(w, "<label for=\"username\">username</label>\n")
 		fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" readonly value=\"%s\">\n", u.Username)
 		fmt.Fprintf(w, "</div>\n")
@@ -1279,7 +1279,7 @@ LIMIT ? OFFSET ?`, orderby)
 }
 
 func printPagingNav(w http.ResponseWriter, baseurl string, offset, limit, nrows int) {
-	fmt.Fprintf(w, "<div class=\"flex-row text-italic mt-xl\">\n")
+	fmt.Fprintf(w, "<div class=\"flex-row text-sm text-fade-2 text-italic mt-xl\">\n")
 	if offset > 0 {
 		prevOffset := offset - limit
 		if prevOffset < 0 {
