@@ -1,0 +1,76 @@
+html {
+    font-size: 12px;
+}
+body {
+    font-family: "Verdana", "Geneva", sans-serif;
+}
+.main {
+    padding: 0.25rem 1rem;
+}
+.body {
+    margin: 0 auto 1rem;
+    padding: 0;
+    max-width: 900px;
+    min-height: 500px;
+    color: var(--fg-1);
+    background-color: var(--bg-1);
+}
+.body .col1 {
+    flex-basis: 67%;
+    margin-right: 1rem;
+}
+.body .col2 {
+    flex-basis: 33%;
+}
+.masthead {
+    background-color: var(--fade-1);
+}
+.entry {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+}
+.entry .col0 {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: 2rem;
+    padding-top: 0rem;
+    padding-right: 0.50rem;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+.entry .col0-comment {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: 1rem;
+}
+.entry .col1 {
+    flex-grow: 1;
+}
+.upvote {
+    display: block;
+}
+.upvote svg {
+    fill: var(--fade-1);
+    stroke: var(--fade-1);
+    width: 10px;
+}
+.upvote.selfvote svg {
+    fill: var(--fg-1);
+}
+.upvote:hover {
+    cursor: pointer;
+}
+.entry-comments {
+}
+
+/* overrides of style.css */
+.simpleform textarea {
+    width: initial;
+}
+.submit {
+    font-weight: initial;
+}
+
