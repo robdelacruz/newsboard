@@ -84,7 +84,7 @@ func main() {
 		s := `Usage:
 
 Start webservice using existing newsboard file:
-	groupnotesd <newsboard_file>
+	groupnotesd <newsboard_file> [port]
 
 Initialize new newsboard file:
 	nb -i <newsboard_file>
@@ -125,7 +125,11 @@ Initialize new newsboard file:
 	http.HandleFunc("/submit/", submitHandler(db))
 	http.HandleFunc("/vote/", voteHandler(db))
 	http.HandleFunc("/unvote/", unvoteHandler(db))
+
 	port := "8000"
+	if len(parms) > 1 {
+		port = parms[1]
+	}
 	fmt.Printf("Listening on %s...\n", port)
 	err = http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
 	log.Fatal(err)
