@@ -123,6 +123,7 @@ Initialize new newsboard file:
 	http.HandleFunc("/", indexHandler(db))
 	http.HandleFunc("/item/", itemHandler(db))
 	http.HandleFunc("/submit/", submitHandler(db))
+	http.HandleFunc("/edit/", editHandler(db))
 	http.HandleFunc("/vote/", voteHandler(db))
 	http.HandleFunc("/unvote/", unvoteHandler(db))
 
@@ -1555,7 +1556,7 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 				e.Createdt = time.Now().Format(time.RFC3339)
 
 				s := "INSERT INTO entry (thing, title, url, body, createdt, user_id) VALUES (?, ?, ?, ?, ?, ?)"
-				result, err := sqlexec(db, s, SUBMISSION, e.Title, e.Url, parseMarkdown(e.Body), e.Createdt, login.Userid)
+				result, err := sqlexec(db, s, SUBMISSION, e.Title, e.Url, e.Body, e.Createdt, login.Userid)
 				if err != nil {
 					log.Printf("DB error creating submission (%s)\n", err)
 					errmsg = "A problem occured. Please try again."
@@ -1607,6 +1608,93 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			fmt.Fprintf(w, "    <button class=\"submit\">submit</button>\n")
 			fmt.Fprintf(w, "  </div>\n")
 		}
+		fmt.Fprintf(w, "</form>\n")
+
+		fmt.Fprintf(w, "</section>\n")
+		printPageFoot(w)
+	}
+}
+
+func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		login := getLoginUser(r, db)
+		if login.Userid != ADMIN_ID {
+			http.Error(w, "admin user required", 401)
+		}
+
+		qentryid := idtoi(r.FormValue("id"))
+		if !validateIdParm(w, qentryid) {
+			return
+		}
+
+		var e Entry
+		s := "SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt FROM entry e WHERE e.entry_id = ?"
+		row := db.QueryRow(s, qentryid)
+		err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt)
+		if handleDbErr(w, err, "itemhandler") {
+			return
+		}
+
+		var errmsg string
+		if r.Method == "POST" {
+			for {
+				e.Title = strings.TrimSpace(r.FormValue("title"))
+				e.Url = strings.TrimSpace(r.FormValue("url"))
+				e.Body = strings.TrimSpace(r.FormValue("body"))
+				if e.Title == "" {
+					errmsg = "Please enter a title."
+					break
+				}
+				if e.Url == "" && e.Body == "" {
+					errmsg = "Please enter a url or text writeup."
+					break
+				}
+
+				e.Body = strings.ReplaceAll(e.Body, "\r", "") // CRLF => CR
+				e.Createdt = time.Now().Format(time.RFC3339)
+
+				s := "UPDATE entry SET title = ?, url = ?, body = ? WHERE entry_id = ?"
+				_, err = sqlexec(db, s, e.Title, e.Url, e.Body, qentryid)
+				if err != nil {
+					log.Printf("DB error editing submission (%s)\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+				http.Redirect(w, r, createItemUrl(qentryid), http.StatusSeeOther)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, login, querySite(db))
+		fmt.Fprintf(w, "<section class=\"main\">\n")
+
+		fmt.Fprintf(w, "<form class=\"simpleform mb-2xl\" method=\"post\" action=\"/edit/?id=%d\">\n", qentryid)
+		if errmsg != "" {
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+			fmt.Fprintf(w, "</div>\n")
+		}
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"title\">title</label>\n")
+		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" value=\"%s\">\n", e.Title)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"url\">url</label>\n")
+		fmt.Fprintf(w, "<input id=\"url\" name=\"url\" type=\"text\" size=\"60\" value=\"%s\">\n", e.Url)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "  <div class=\"control\">\n")
+		fmt.Fprintf(w, "    <label for=\"body\">text</label>\n")
+		fmt.Fprintf(w, "    <textarea id=\"body\" name=\"body\" rows=\"6\" cols=\"60\">%s</textarea>\n", e.Body)
+		fmt.Fprintf(w, "  </div>\n")
+
+		fmt.Fprintf(w, "  <div class=\"control\">\n")
+		fmt.Fprintf(w, "    <button class=\"submit\">submit</button>\n")
+		fmt.Fprintf(w, "  </div>\n")
 		fmt.Fprintf(w, "</form>\n")
 
 		fmt.Fprintf(w, "</section>\n")
