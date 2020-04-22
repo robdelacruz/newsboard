@@ -1130,7 +1130,7 @@ func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, submitter
 	fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 	npoints := int(math.Floor(points))
 	fmt.Fprintf(w, "  <li>%d %s</li>\n", npoints, getPointCountUnit(npoints))
-	fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", submitter.Username)
+	fmt.Fprintf(w, "  <li><a href=\"/?username=%s\">%s</a></li>\n", submitter.Username, submitter.Username)
 	fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
 	fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(e, ncomments))
 	fmt.Fprintf(w, "</ul>\n")
@@ -1229,6 +1229,7 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		login := getLoginUser(r, db)
 		site := querySite(db)
 
+		qusername := r.FormValue("username")
 		qoffset := atoi(r.FormValue("offset"))
 		if qoffset <= 0 {
 			qoffset = 0
@@ -1249,6 +1250,12 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		if qlatest != "" {
 			orderby = "e.createdt DESC"
 		}
+		var where string
+		if qusername != "" {
+			where = fmt.Sprintf("thing = 0 AND u.Username = ?")
+		} else {
+			where = "thing = 0"
+		}
 		s := fmt.Sprintf(`SELECT e.entry_id, e.title, e.url, e.createdt, 
 IFNULL(u.user_id, 0), IFNULL(u.username, ''),  
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
@@ -1259,10 +1266,17 @@ FROM entry AS e
 LEFT OUTER JOIN user u ON e.user_id = u.user_id 
 LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
 LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ? 
-WHERE thing = 0 
+WHERE %s 
 ORDER BY %s 
-LIMIT ? OFFSET ?`, orderby)
-		rows, err := db.Query(s, site.Gravityf, login.Userid, qlimit, qoffset)
+LIMIT ? OFFSET ?`, where, orderby)
+
+		var rows *sql.Rows
+		var err error
+		if qusername != "" {
+			rows, err = db.Query(s, site.Gravityf, login.Userid, qusername, qlimit, qoffset)
+		} else {
+			rows, err = db.Query(s, site.Gravityf, login.Userid, qlimit, qoffset)
+		}
 		if handleDbErr(w, err, "indexhandler") {
 			return
 		}
