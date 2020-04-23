@@ -1299,7 +1299,7 @@ LIMIT ? OFFSET ?`, where, orderby)
 		}
 		fmt.Fprintf(w, "</ul>\n")
 
-		baseurl := fmt.Sprintf("/?latest=%s", qlatest)
+		baseurl := fmt.Sprintf("/?username=%s&latest=%s", qusername, qlatest)
 		printPagingNav(w, baseurl, qoffset, qlimit, nrows)
 		fmt.Fprintf(w, "</section>\n")
 		printPageFoot(w)
