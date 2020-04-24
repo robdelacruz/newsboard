@@ -340,12 +340,15 @@ func createAndInitTables(newfile string) {
 		`CREATE TABLE user (user_id INTEGER PRIMARY KEY NOT NULL, username TEXT, password TEXT, active INTEGER NOT NULL, email TEXT, CONSTRAINT unique_username UNIQUE (username));`,
 		`INSERT INTO user (user_id, username, password, active, email) VALUES (1, 'admin', '', 1, 'admin@localhost');`,
 		`CREATE TABLE entryvote(entry_id INTEGER NOT NULL, user_id INTEGER, PRIMARY KEY (entry_id, user_id));`,
+		`CREATE TABLE entrytag(entry_id INTEGER NOT NULL, tag TEXT NOT NULL)`,
 		`CREATE TABLE site (site_id INTEGER PRIMARY KEY NOT NULL, title TEXT NOT NULL, desc TEXT NOT NULL, gravityf REAL NOT NULL);`,
 		`INSERT INTO site (site_id, title, desc, gravityf) VALUES (1, 'newsboard', '', 1.0);`,
 		`CREATE VIEW totalvotes 
 AS 
 SELECT entry_id, COUNT(*) AS votes FROM entryvote GROUP BY entry_id;`,
 		`INSERT INTO entry (entry_id, thing, title, url, body, createdt, user_id, parent_id) VALUES (1, 0, 'newsboard - a hackernews clone', 'https://github.com/robdelacruz/newsboard', '', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 1, 0);`,
+		`INSERT INTO entrytag (entry_id, tag) VALUES (1, 'tech');`,
+		`INSERT INTO entrytag (entry_id, tag) VALUES (1, 'programming');`,
 		"COMMIT;",
 	}
 
@@ -576,7 +579,7 @@ func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		printPageNav(w, login, querySite(db))
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
-		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/login/?from=%s\" method=\"post\">\n", qfrom)
+		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/login/?from=%s\" method=\"post\">\n", url.QueryEscape(qfrom))
 		fmt.Fprintf(w, "<h1 class=\"heading\">Login</h1>")
 		if errmsg != "" {
 			fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -598,7 +601,7 @@ func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "</div>\n")
 		fmt.Fprintf(w, "</form>\n")
 
-		fmt.Fprintf(w, "<p class=\"mt-xl\"><a href=\"/createaccount/?from=%s\">Create New Account</a></p>\n", qfrom)
+		fmt.Fprintf(w, "<p class=\"mt-xl\"><a href=\"/createaccount/?from=%s\">Create New Account</a></p>\n", url.QueryEscape(qfrom))
 		fmt.Fprintf(w, "</section>\n")
 
 		printPageFoot(w)
@@ -684,7 +687,7 @@ func createaccountHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		printPageNav(w, login, querySite(db))
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
-		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/createaccount/?from=%s\" method=\"post\">\n", qfrom)
+		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/createaccount/?from=%s\" method=\"post\">\n", url.QueryEscape(qfrom))
 		fmt.Fprintf(w, "<h1 class=\"heading\">Create Account</h1>")
 		if errmsg != "" {
 			fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -775,7 +778,7 @@ func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 
-		fmt.Fprintf(w, "<form class=\"simpleform mb-xl\" action=\"/adminsetup/?from=%s\" method=\"post\">\n", qfrom)
+		fmt.Fprintf(w, "<form class=\"simpleform mb-xl\" action=\"/adminsetup/?from=%s\" method=\"post\">\n", url.QueryEscape(qfrom))
 		fmt.Fprintf(w, "<h1 class=\"heading\">Site Settings</h1>")
 		if errmsg != "" {
 			fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -946,7 +949,7 @@ func edituserHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<div class=\"main\">\n")
 		fmt.Fprintf(w, "<section class=\"main-content\">\n")
-		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/edituser/?userid=%d&setpwd=%s&from=%s\" method=\"post\">\n", quserid, qsetpwd, qfrom)
+		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/edituser/?userid=%d&setpwd=%s&from=%s\" method=\"post\">\n", quserid, qsetpwd, url.QueryEscape(qfrom))
 		fmt.Fprintf(w, "<h1 class=\"heading\">Edit User</h1>")
 		if errmsg != "" {
 			fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -1045,7 +1048,7 @@ func activateuserHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<div class=\"main\">\n")
 		fmt.Fprintf(w, "<section class=\"main-content\">\n")
-		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/activateuser/?userid=%d&setactive=%d&from=%s\" method=\"post\">\n", quserid, qsetactive, qfrom)
+		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/activateuser/?userid=%d&setactive=%d&from=%s\" method=\"post\">\n", quserid, qsetactive, url.QueryEscape(qfrom))
 		if qsetactive == 0 {
 			fmt.Fprintf(w, "<h1 class=\"heading\">Deactivate User</h1>")
 		} else {
@@ -1135,6 +1138,9 @@ func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, e 
 	fmt.Fprintf(w, "<div class=\"col1\">\n")
 	fmt.Fprintf(w, "<div class=\"mb-xs text-lg\">\n")
 	fmt.Fprintf(w, "  <a class=\"no-underline\" href=\"%s\">%s</a>\n", entryurl, e.Title)
+
+	// todo add tags here
+
 	if e.Url != "" {
 		urllink, err := url.Parse(e.Url)
 		urlhostname := strings.TrimPrefix(urllink.Hostname(), "www.")
@@ -1147,6 +1153,9 @@ func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, e 
 	npoints := int(math.Floor(points))
 	fmt.Fprintf(w, "  <li>%d %s</li>\n", npoints, getPointCountUnit(npoints))
 	fmt.Fprintf(w, "  <li><a href=\"/?username=%s\">%s</a></li>\n", submitter.Username, submitter.Username)
+	if login.Userid == ADMIN_ID {
+		fmt.Fprintf(w, "  <li><a class=\"btn-pill\" href=\"/edit/?id=%d&from=%s\">edit</a></li>\n", e.Entryid, url.QueryEscape(r.RequestURI))
+	}
 	if login.Userid == ADMIN_ID || submitter.Userid == login.Userid {
 		fromurl := r.RequestURI
 		if strings.Contains(fromurl, "/item") {
@@ -1554,6 +1563,7 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		login := getLoginUser(r, db)
 
 		var e Entry
+		var tags string
 
 		var errmsg string
 		if r.Method == "POST" {
@@ -1561,10 +1571,12 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 				return
 			}
 
+		SUBMIT_FOR:
 			for {
 				e.Title = strings.TrimSpace(r.FormValue("title"))
 				e.Url = strings.TrimSpace(r.FormValue("url"))
 				e.Body = strings.TrimSpace(r.FormValue("body"))
+				tags = strings.TrimSpace(r.FormValue("tags"))
 				if e.Title == "" {
 					errmsg = "Please enter a title."
 					break
@@ -1586,9 +1598,24 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 				}
 				newid, err := result.LastInsertId()
 				if err != nil {
+					log.Printf("DB error getting LastInsertId() (%s)\n", err)
 					http.Redirect(w, r, "/", http.StatusSeeOther)
 					return
 				}
+
+				// Add entry tags
+				tt := strings.Split(tags, ",")
+				for _, t := range tt {
+					t = strings.TrimSpace(t)
+					s := "INSERT INTO entrytag (entry_id, tag) VALUES (?, ?)"
+					_, err := sqlexec(db, s, newid, t)
+					if err != nil {
+						log.Printf("DB error adding tag (%s)\n", err)
+						errmsg = "A problem occured. Please try again."
+						break SUBMIT_FOR
+					}
+				}
+
 				http.Redirect(w, r, createItemUrl(newid), http.StatusSeeOther)
 				return
 			}
@@ -1604,34 +1631,44 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			fmt.Fprintf(w, "<div class=\"control text-sm text-fade-2 text-italic\">\n")
 			fmt.Fprintf(w, "<label><a href=\"/login/?from=%s\">Log in</a> to post a comment.</label>\n", url.QueryEscape(r.RequestURI))
 			fmt.Fprintf(w, "</div>\n")
-		} else {
-			if errmsg != "" {
-				fmt.Fprintf(w, "<div class=\"control\">\n")
-				fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
-				fmt.Fprintf(w, "</div>\n")
-			}
 
-			fmt.Fprintf(w, "<div class=\"control\">\n")
-			fmt.Fprintf(w, "<label for=\"title\">title</label>\n")
-			fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" value=\"%s\">\n", e.Title)
-			fmt.Fprintf(w, "</div>\n")
-
-			fmt.Fprintf(w, "<div class=\"control\">\n")
-			fmt.Fprintf(w, "<label for=\"url\">url</label>\n")
-			fmt.Fprintf(w, "<input id=\"url\" name=\"url\" type=\"text\" size=\"60\" value=\"%s\">\n", e.Url)
-			fmt.Fprintf(w, "</div>\n")
-
-			fmt.Fprintf(w, "  <div class=\"control\">\n")
-			fmt.Fprintf(w, "    <label for=\"body\">text</label>\n")
-			fmt.Fprintf(w, "    <textarea id=\"body\" name=\"body\" rows=\"6\" cols=\"60\">%s</textarea>\n", e.Body)
-			fmt.Fprintf(w, "  </div>\n")
-
-			fmt.Fprintf(w, "  <div class=\"control\">\n")
-			fmt.Fprintf(w, "    <button class=\"submit\">submit</button>\n")
-			fmt.Fprintf(w, "  </div>\n")
+			fmt.Fprintf(w, "</form>\n")
+			fmt.Fprintf(w, "</section>\n")
+			printPageFoot(w)
+			return
 		}
-		fmt.Fprintf(w, "</form>\n")
 
+		if errmsg != "" {
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+			fmt.Fprintf(w, "</div>\n")
+		}
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"title\">title</label>\n")
+		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" value=\"%s\">\n", e.Title)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"url\">url</label>\n")
+		fmt.Fprintf(w, "<input id=\"url\" name=\"url\" type=\"text\" size=\"60\" value=\"%s\">\n", e.Url)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "  <div class=\"control\">\n")
+		fmt.Fprintf(w, "    <label for=\"body\">text</label>\n")
+		fmt.Fprintf(w, "    <textarea id=\"body\" name=\"body\" rows=\"6\" cols=\"60\">%s</textarea>\n", e.Body)
+		fmt.Fprintf(w, "  </div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"tags\">tags</label>\n")
+		fmt.Fprintf(w, "<input id=\"tags\" name=\"tags\" type=\"text\" size=\"60\" value=\"%s\">\n", tags)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "  <div class=\"control\">\n")
+		fmt.Fprintf(w, "    <button class=\"submit\">submit</button>\n")
+		fmt.Fprintf(w, "  </div>\n")
+
+		fmt.Fprintf(w, "</form>\n")
 		fmt.Fprintf(w, "</section>\n")
 		printPageFoot(w)
 	}
@@ -1761,19 +1798,35 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		}
 
 		var e Entry
+
 		s := "SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt FROM entry e WHERE e.entry_id = ?"
 		row := db.QueryRow(s, qentryid)
 		err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt)
-		if handleDbErr(w, err, "itemhandler") {
+		if handleDbErr(w, err, "edithandler") {
 			return
 		}
 
+		s = "SELECT tag FROM entrytag WHERE entry_id = ? ORDER BY tag"
+		rows, err := db.Query(s, qentryid)
+		if handleDbErr(w, err, "edithandler") {
+			return
+		}
+		var tt []string
+		for rows.Next() {
+			var t string
+			rows.Scan(&t)
+			tt = append(tt, t)
+		}
+		tags := strings.Join(tt, ", ")
+
 		var errmsg string
 		if r.Method == "POST" {
+		SUBMIT_FOR:
 			for {
 				e.Title = strings.TrimSpace(r.FormValue("title"))
 				e.Url = strings.TrimSpace(r.FormValue("url"))
 				e.Body = strings.TrimSpace(r.FormValue("body"))
+				tags = strings.TrimSpace(r.FormValue("tags"))
 				if e.Title == "" {
 					errmsg = "Please enter a title."
 					break
@@ -1789,10 +1842,32 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 				s := "UPDATE entry SET title = ?, url = ?, body = ? WHERE entry_id = ?"
 				_, err = sqlexec(db, s, e.Title, e.Url, e.Body, qentryid)
 				if err != nil {
-					log.Printf("DB error editing submission (%s)\n", err)
+					log.Printf("DB error updating submission (%s)\n", err)
 					errmsg = "A problem occured. Please try again."
 					break
 				}
+
+				// Update entry tags
+				s = "DELETE FROM entrytag WHERE entry_id = ?"
+				_, err = sqlexec(db, s, qentryid)
+				if err != nil {
+					log.Printf("DB error deleting existing entry tags (%s)\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
+				tt := strings.Split(tags, ",")
+				for _, t := range tt {
+					t = strings.TrimSpace(t)
+					s := "INSERT INTO entrytag (entry_id, tag) VALUES (?, ?)"
+					_, err := sqlexec(db, s, qentryid, t)
+					if err != nil {
+						log.Printf("DB error adding tag (%s)\n", err)
+						errmsg = "A problem occured. Please try again."
+						break SUBMIT_FOR
+					}
+				}
+
 				http.Redirect(w, r, createItemUrl(qentryid), http.StatusSeeOther)
 				return
 			}
@@ -1824,6 +1899,11 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "    <label for=\"body\">text</label>\n")
 		fmt.Fprintf(w, "    <textarea id=\"body\" name=\"body\" rows=\"6\" cols=\"60\">%s</textarea>\n", e.Body)
 		fmt.Fprintf(w, "  </div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"tags\">tags</label>\n")
+		fmt.Fprintf(w, "<input id=\"tags\" name=\"tags\" type=\"text\" size=\"60\" value=\"%s\">\n", tags)
+		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "  <div class=\"control\">\n")
 		fmt.Fprintf(w, "    <button class=\"submit\">submit</button>\n")
