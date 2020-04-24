@@ -83,6 +83,9 @@ a, a:visited {
 .box {
     border: 1px solid #ddd;
 }
+.btn-pill {
+    background-color: #ddd;
+}
 
 .heading {
     font-size: 1rem;

@@ -124,6 +124,7 @@ Initialize new newsboard file:
 	http.HandleFunc("/item/", itemHandler(db))
 	http.HandleFunc("/submit/", submitHandler(db))
 	http.HandleFunc("/edit/", editHandler(db))
+	http.HandleFunc("/del/", delHandler(db))
 	http.HandleFunc("/vote/", voteHandler(db))
 	http.HandleFunc("/unvote/", unvoteHandler(db))
 
@@ -293,6 +294,20 @@ func sqlstmt(db *sql.DB, s string) *sql.Stmt {
 
 func sqlexec(db *sql.DB, s string, pp ...interface{}) (sql.Result, error) {
 	stmt := sqlstmt(db, s)
+	defer stmt.Close()
+	return stmt.Exec(pp...)
+}
+
+func txstmt(tx *sql.Tx, s string) *sql.Stmt {
+	stmt, err := tx.Prepare(s)
+	if err != nil {
+		log.Fatalf("tx.Prepare() sql: '%s'\nerror: '%s'", s, err)
+	}
+	return stmt
+}
+
+func txexec(tx *sql.Tx, s string, pp ...interface{}) (sql.Result, error) {
+	stmt := txstmt(tx, s)
 	defer stmt.Close()
 	return stmt.Exec(pp...)
 }
@@ -1103,7 +1118,7 @@ func printCommentMarker(w http.ResponseWriter) {
 	fmt.Fprintf(w, "</svg>\n")
 }
 
-func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, submitter *User, login *User, ncomments, totalvotes int, selfvote int, points float64, showBody bool) {
+func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, e *Entry, submitter *User, login *User, ncomments, totalvotes int, selfvote int, points float64, showBody bool) {
 	screatedt := parseIsoDate(e.Createdt)
 	itemurl := createItemUrl(e.Entryid)
 	entryurl := e.Url
@@ -1132,6 +1147,13 @@ func printSubmissionEntry(w http.ResponseWriter, db *sql.DB, e *Entry, submitter
 	npoints := int(math.Floor(points))
 	fmt.Fprintf(w, "  <li>%d %s</li>\n", npoints, getPointCountUnit(npoints))
 	fmt.Fprintf(w, "  <li><a href=\"/?username=%s\">%s</a></li>\n", submitter.Username, submitter.Username)
+	if login.Userid == ADMIN_ID || submitter.Userid == login.Userid {
+		fromurl := r.RequestURI
+		if strings.Contains(fromurl, "/item") {
+			fromurl = "/"
+		}
+		fmt.Fprintf(w, "  <li><a class=\"btn-pill\" href=\"/del/?id=%d&from=%s\">delete</a></li>\n", e.Entryid, url.QueryEscape(fromurl))
+	}
 	fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
 	fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(e, ncomments))
 	fmt.Fprintf(w, "</ul>\n")
@@ -1293,7 +1315,7 @@ LIMIT ? OFFSET ?`, where, orderby)
 		for rows.Next() {
 			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username, &ncomments, &totalvotes, &selfvote, &points)
 			fmt.Fprintf(w, "<li>\n")
-			printSubmissionEntry(w, db, &e, &u, login, ncomments, totalvotes, selfvote, points, false)
+			printSubmissionEntry(w, r, db, &e, &u, login, ncomments, totalvotes, selfvote, points, false)
 			fmt.Fprintf(w, "</li>\n")
 			nrows++
 		}
@@ -1471,7 +1493,7 @@ WHERE e.entry_id = ?`
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		if e.Thing == SUBMISSION {
-			printSubmissionEntry(w, db, &e, &u, login, ncomments, totalvotes, selfvote, points, true)
+			printSubmissionEntry(w, r, db, &e, &u, login, ncomments, totalvotes, selfvote, points, true)
 		} else if e.Thing == COMMENT {
 			printCommentEntry(w, db, &e, &u, &p, ncomments)
 		}
@@ -1608,6 +1630,117 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			fmt.Fprintf(w, "    <button class=\"submit\">submit</button>\n")
 			fmt.Fprintf(w, "  </div>\n")
 		}
+		fmt.Fprintf(w, "</form>\n")
+
+		fmt.Fprintf(w, "</section>\n")
+		printPageFoot(w)
+	}
+}
+
+func delEntry(tx *sql.Tx, db *sql.DB, entryid int64) error {
+	s := "DELETE FROM entry WHERE entry_id = ?"
+	_, err := txexec(tx, s, entryid)
+	if err != nil {
+		return err
+	}
+
+	// Delete children of entry recursively.
+	s = "SELECT entry_id FROM entry WHERE parent_id = ?"
+	rows, err := db.Query(s, entryid)
+	for rows.Next() {
+		var childid int64
+		rows.Scan(&childid)
+		err = delEntry(tx, db, childid)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func delHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		login := getLoginUser(r, db)
+
+		qentryid := idtoi(r.FormValue("id"))
+		if !validateIdParm(w, qentryid) {
+			return
+		}
+
+		qfrom := r.FormValue("from")
+
+		var e Entry
+		s := "SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, e.user_id FROM entry e WHERE e.entry_id = ?"
+		row := db.QueryRow(s, qentryid)
+		err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt, &e.Userid)
+		if handleDbErr(w, err, "itemhandler") {
+			return
+		}
+		if login.Userid != ADMIN_ID && e.Userid != login.Userid {
+			http.Error(w, "admin or entry submitter required", 401)
+			return
+		}
+
+		var errmsg string
+		if r.Method == "POST" {
+			for {
+				tx, err := db.Begin()
+				if err != nil {
+					log.Printf("DB error creating transaction (%s)\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
+				err = delEntry(tx, db, qentryid)
+				if err != nil {
+					log.Printf("DB error deleting entry (%s)\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
+				err = tx.Commit()
+				if err != nil {
+					log.Printf("DB error commiting transaction (%s)\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
+				http.Redirect(w, r, unescapeUrl(qfrom), http.StatusSeeOther)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, login, querySite(db))
+		fmt.Fprintf(w, "<section class=\"main\">\n")
+
+		fmt.Fprintf(w, "<form class=\"simpleform mb-2xl\" method=\"post\" action=\"/del/?id=%d&from=%s\">\n", qentryid, url.QueryEscape(qfrom))
+		if errmsg != "" {
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+			fmt.Fprintf(w, "</div>\n")
+		}
+
+		fmt.Fprintf(w, "<div class=\"control displayonly\">\n")
+		fmt.Fprintf(w, "<label for=\"title\">title</label>\n")
+		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" value=\"%s\" readonly>\n", e.Title)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control displayonly\">\n")
+		fmt.Fprintf(w, "<label for=\"url\">url</label>\n")
+		fmt.Fprintf(w, "<input id=\"url\" name=\"url\" type=\"text\" size=\"60\" value=\"%s\" readonly>\n", e.Url)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "  <div class=\"control displayonly\">\n")
+		fmt.Fprintf(w, "    <label for=\"body\">text</label>\n")
+		fmt.Fprintf(w, "    <textarea id=\"body\" name=\"body\" rows=\"6\" cols=\"60\" readonly>%s</textarea>\n", e.Body)
+		fmt.Fprintf(w, "  </div>\n")
+
+		fmt.Fprintf(w, "  <div class=\"control\">\n")
+		fmt.Fprintf(w, "    <button class=\"submit\">delete</button>\n")
+		fmt.Fprintf(w, "  </div>\n")
 		fmt.Fprintf(w, "</form>\n")
 
 		fmt.Fprintf(w, "</section>\n")
