@@ -1121,7 +1121,7 @@ func printCommentMarker(w http.ResponseWriter) {
 	fmt.Fprintf(w, "</svg>\n")
 }
 
-func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, e *Entry, submitter *User, login *User, ncomments, totalvotes int, selfvote int, points float64, showBody bool) {
+func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, e *Entry, tt []string, submitter *User, login *User, ncomments, totalvotes int, selfvote int, points float64, showBody bool) {
 	screatedt := parseIsoDate(e.Createdt)
 	itemurl := createItemUrl(e.Entryid)
 	entryurl := e.Url
@@ -1139,8 +1139,7 @@ func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, e 
 	fmt.Fprintf(w, "<div class=\"mb-xs text-lg\">\n")
 	fmt.Fprintf(w, "  <a class=\"no-underline\" href=\"%s\">%s</a>\n", entryurl, e.Title)
 
-	// todo add tags here
-
+	// url host
 	if e.Url != "" {
 		urllink, err := url.Parse(e.Url)
 		urlhostname := strings.TrimPrefix(urllink.Hostname(), "www.")
@@ -1148,20 +1147,25 @@ func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, e 
 			fmt.Fprintf(w, " <span class=\"text-fade-2 text-sm\">(%s)</span>\n", urlhostname)
 		}
 	}
+	// tags
+	for _, t := range tt {
+		fmt.Fprintf(w, " <span class=\"text-fade-2 btn-pill-0 text-sm px-1\"><a class=\"no-underline\"href=\"/?tag=%s\">%s</a></span>\n", t, t)
+	}
+
 	fmt.Fprintf(w, "</div>\n")
 	fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 	npoints := int(math.Floor(points))
 	fmt.Fprintf(w, "  <li>%d %s</li>\n", npoints, getPointCountUnit(npoints))
 	fmt.Fprintf(w, "  <li><a href=\"/?username=%s\">%s</a></li>\n", submitter.Username, submitter.Username)
 	if login.Userid == ADMIN_ID {
-		fmt.Fprintf(w, "  <li><a class=\"btn-pill\" href=\"/edit/?id=%d&from=%s\">edit</a></li>\n", e.Entryid, url.QueryEscape(r.RequestURI))
+		fmt.Fprintf(w, "  <li><a class=\"\" href=\"/edit/?id=%d&from=%s\">edit</a></li>\n", e.Entryid, url.QueryEscape(r.RequestURI))
 	}
 	if login.Userid == ADMIN_ID || submitter.Userid == login.Userid {
 		fromurl := r.RequestURI
 		if strings.Contains(fromurl, "/item") {
 			fromurl = "/"
 		}
-		fmt.Fprintf(w, "  <li><a class=\"btn-pill\" href=\"/del/?id=%d&from=%s\">delete</a></li>\n", e.Entryid, url.QueryEscape(fromurl))
+		fmt.Fprintf(w, "  <li><a class=\"\" href=\"/del/?id=%d&from=%s\">delete</a></li>\n", e.Entryid, url.QueryEscape(fromurl))
 	}
 	fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
 	fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(e, ncomments))
@@ -1261,7 +1265,9 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		login := getLoginUser(r, db)
 		site := querySite(db)
 
+		qlatest := r.FormValue("latest")
 		qusername := r.FormValue("username")
+		qtag := r.FormValue("tag")
 		qoffset := atoi(r.FormValue("offset"))
 		if qoffset <= 0 {
 			qoffset = 0
@@ -1270,7 +1276,6 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		if qlimit <= 0 {
 			qlimit = SETTINGS_LIMIT
 		}
-		qlatest := r.FormValue("latest")
 
 		w.Header().Set("Content-Type", "text/html")
 		printPageHead(w, []string{"/static/handlevote.js"}, nil)
@@ -1282,12 +1287,24 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		if qlatest != "" {
 			orderby = "e.createdt DESC"
 		}
-		var where string
-		if qusername != "" {
-			where = fmt.Sprintf("thing = 0 AND u.Username = ?")
-		} else {
-			where = "thing = 0"
+
+		var qq []interface{}
+		qq = append(qq, site.Gravityf, login.Userid)
+		where := "thing = 0"
+		join := `LEFT OUTER JOIN user u ON e.user_id = u.user_id 
+LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
+LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ?`
+
+		if qtag != "" {
+			join += " INNER JOIN entrytag et ON e.entry_id = et.entry_id AND et.tag = ?"
+			qq = append(qq, qtag)
 		}
+		if qusername != "" {
+			where += " AND u.Username = ?"
+			qq = append(qq, qusername)
+		}
+		qq = append(qq, qlimit, qoffset)
+
 		s := fmt.Sprintf(`SELECT e.entry_id, e.title, e.url, e.createdt, 
 IFNULL(u.user_id, 0), IFNULL(u.username, ''),  
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
@@ -1295,20 +1312,11 @@ IFNULL(totalvotes.votes, 0),
 CASE WHEN ev.entry_id IS NOT NULL THEN 1 ELSE 0 END, 
 calculate_points(IFNULL(totalvotes.votes, 0), e.createdt, ?) AS points
 FROM entry AS e 
-LEFT OUTER JOIN user u ON e.user_id = u.user_id 
-LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
-LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ? 
+ %s 
 WHERE %s 
 ORDER BY %s 
-LIMIT ? OFFSET ?`, where, orderby)
-
-		var rows *sql.Rows
-		var err error
-		if qusername != "" {
-			rows, err = db.Query(s, site.Gravityf, login.Userid, qusername, qlimit, qoffset)
-		} else {
-			rows, err = db.Query(s, site.Gravityf, login.Userid, qlimit, qoffset)
-		}
+LIMIT ? OFFSET ?`, join, where, orderby)
+		rows, err := db.Query(s, qq...)
 		if handleDbErr(w, err, "indexhandler") {
 			return
 		}
@@ -1324,7 +1332,9 @@ LIMIT ? OFFSET ?`, where, orderby)
 		for rows.Next() {
 			rows.Scan(&e.Entryid, &e.Title, &e.Url, &e.Createdt, &u.Userid, &u.Username, &ncomments, &totalvotes, &selfvote, &points)
 			fmt.Fprintf(w, "<li>\n")
-			printSubmissionEntry(w, r, db, &e, &u, login, ncomments, totalvotes, selfvote, points, false)
+
+			tt, _ := queryEntryTags(db, e.Entryid)
+			printSubmissionEntry(w, r, db, &e, tt, &u, login, ncomments, totalvotes, selfvote, points, false)
 			fmt.Fprintf(w, "</li>\n")
 			nrows++
 		}
@@ -1502,7 +1512,8 @@ WHERE e.entry_id = ?`
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		if e.Thing == SUBMISSION {
-			printSubmissionEntry(w, r, db, &e, &u, login, ncomments, totalvotes, selfvote, points, true)
+			tt, _ := queryEntryTags(db, e.Entryid)
+			printSubmissionEntry(w, r, db, &e, tt, &u, login, ncomments, totalvotes, selfvote, points, true)
 		} else if e.Thing == COMMENT {
 			printCommentEntry(w, db, &e, &u, &p, ncomments)
 		}
@@ -1806,16 +1817,11 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		s = "SELECT tag FROM entrytag WHERE entry_id = ? ORDER BY tag"
-		rows, err := db.Query(s, qentryid)
-		if handleDbErr(w, err, "edithandler") {
+		tt, err := queryEntryTags(db, qentryid)
+		if err != nil {
+			log.Printf("edithandler: database error (%s)\n", err)
+			http.Error(w, "Server database error.", 500)
 			return
-		}
-		var tt []string
-		for rows.Next() {
-			var t string
-			rows.Scan(&t)
-			tt = append(tt, t)
 		}
 		tags := strings.Join(tt, ", ")
 
@@ -2066,6 +2072,21 @@ func queryEntry(db *sql.DB, entryid int64) (*Entry, error) {
 		return nil, err
 	}
 	return &e, nil
+}
+
+func queryEntryTags(db *sql.DB, entryid int64) ([]string, error) {
+	s := "SELECT tag FROM entrytag WHERE entry_id = ? ORDER BY tag"
+	rows, err := db.Query(s, entryid)
+	if err != nil {
+		return nil, err
+	}
+	var tt []string
+	for rows.Next() {
+		var t string
+		rows.Scan(&t)
+		tt = append(tt, t)
+	}
+	return tt, nil
 }
 
 // createHash(), encrypt() and decrypt() copied from Nic Raboy (thanks!) source article:
