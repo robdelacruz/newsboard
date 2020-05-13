@@ -735,6 +735,7 @@ func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		login := getLoginUser(r, db)
 		if login.Userid != ADMIN_ID {
 			http.Error(w, "admin user required", 401)
+			return
 		}
 
 		site := querySite(db)
@@ -1157,7 +1158,7 @@ func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, e 
 	npoints := int(math.Floor(points))
 	fmt.Fprintf(w, "  <li>%d %s</li>\n", npoints, getPointCountUnit(npoints))
 	fmt.Fprintf(w, "  <li><a href=\"/?username=%s\">%s</a></li>\n", submitter.Username, submitter.Username)
-	if login.Userid == ADMIN_ID {
+	if login.Userid == ADMIN_ID || submitter.Userid == login.Userid {
 		fmt.Fprintf(w, "  <li><a class=\"\" href=\"/edit/?id=%d&from=%s\">edit</a></li>\n", e.Entryid, url.QueryEscape(r.RequestURI))
 	}
 	if login.Userid == ADMIN_ID || submitter.Userid == login.Userid {
@@ -1799,21 +1800,20 @@ func delHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		login := getLoginUser(r, db)
-		if login.Userid != ADMIN_ID {
-			http.Error(w, "admin user required", 401)
-		}
-
 		qentryid := idtoi(r.FormValue("id"))
 		if !validateIdParm(w, qentryid) {
 			return
 		}
 
 		var e Entry
-
-		s := "SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt FROM entry e WHERE e.entry_id = ?"
+		s := "SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, e.user_id FROM entry e WHERE e.entry_id = ?"
 		row := db.QueryRow(s, qentryid)
-		err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt)
+		err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt, &e.Userid)
 		if handleDbErr(w, err, "edithandler") {
+			return
+		}
+		if login.Userid != ADMIN_ID && login.Userid != e.Userid {
+			http.Error(w, "admin user or entry submitter required", 401)
 			return
 		}
 
