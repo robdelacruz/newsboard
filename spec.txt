@@ -1,8 +1,8 @@
 Functions needed:
+- Add categories. Admin creates categories, default 'Uncategorized'.
+- Section showing categories and tags to browse.
 - Use html for submissions text? Auto-detect http:// links?
 - Moderator functions: moderator users can delete/edit submissions.
-- Page listing all submissions of a user.
-- Show n years/months/days/hours ago in datetime.
 
 
 Hackernews points formula
