@@ -71,7 +71,7 @@
 .flex-shrink-0 {flex-shrink: 0;}
 .justify-between {justify-content: space-between;}
 
-p, ul, li, h1, h2, h3, h4 {
+p, ul, li, h1, h2, h3, h4, blockquote {
     margin: 0;
     padding: 0;
 }
