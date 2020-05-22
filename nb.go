@@ -316,6 +316,13 @@ func parseMarkdown(s string) string {
 	return string(blackfriday.Run([]byte(s), blackfriday.WithExtensions(blackfriday.HardLineBreak)))
 }
 
+func parseTextLinks(body string) string {
+	sre := `\b(https?://\S+)`
+	re := regexp.MustCompile(sre)
+	body = re.ReplaceAllString(body, "<$1>")
+	return body
+}
+
 func parseIsoDate(dt string) string {
 	tdt, _ := time.Parse(time.RFC3339, dt)
 	return tdt.Format("2 Jan 2006")
@@ -1174,7 +1181,9 @@ func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, e 
 
 	if showBody {
 		fmt.Fprintf(w, "<div class=\"content mt-base mb-base\">\n")
-		fmt.Fprintf(w, parseMarkdown(e.Body))
+		//e.Body = parseTextLinks(e.Body)
+		e.Body = parseMarkdown(e.Body)
+		fmt.Fprintf(w, e.Body)
 		fmt.Fprintf(w, "</div>\n")
 	}
 
@@ -1216,7 +1225,9 @@ func printCommentEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, par
 	fmt.Fprintf(w, "</ul>\n")
 
 	fmt.Fprintf(w, "<div class=\"content mt-base mb-base\">\n")
-	fmt.Fprintf(w, parseMarkdown(e.Body))
+	//e.Body = parseTextLinks(e.Body)
+	e.Body = parseMarkdown(e.Body)
+	fmt.Fprintf(w, e.Body)
 	fmt.Fprintf(w, "</div>\n")
 
 	fmt.Fprintf(w, "</div>\n") // col1
@@ -1252,7 +1263,9 @@ func printComment(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, uparent 
 		//		fmt.Fprintf(w, "<span class=\"mention\">@%s</span> ", uparent.Username)
 		body = fmt.Sprintf("***@%s*** %s", uparent.Username, e.Body)
 	}
-	fmt.Fprintf(w, parseMarkdown(body))
+	//body = parseTextLinks(body)
+	body = parseMarkdown(body)
+	fmt.Fprintf(w, body)
 	fmt.Fprintf(w, "</div>\n")
 
 	fmt.Fprintf(w, "  <p class=\"text-xs mb-base\"><a href=\"%s\">reply</a></p>\n", createItemUrl(e.Entryid))
