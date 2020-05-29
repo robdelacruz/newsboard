@@ -57,6 +57,11 @@ type Entry struct {
 	Parentid int64
 }
 
+type Cat struct {
+	Catid int64
+	Name  string
+}
+
 type VoteResult struct {
 	Entryid    int64 `json:"entryid"`
 	Userid     int64 `json:"userid"`
@@ -348,12 +353,18 @@ func createAndInitTables(newfile string) {
 		`INSERT INTO user (user_id, username, password, active, email) VALUES (1, 'admin', '', 1, 'admin@localhost');`,
 		`CREATE TABLE entryvote(entry_id INTEGER NOT NULL, user_id INTEGER, PRIMARY KEY (entry_id, user_id));`,
 		`CREATE TABLE entrytag(entry_id INTEGER NOT NULL, tag TEXT NOT NULL)`,
+		`CREATE TABLE cat(cat_id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL)`,
+		`CREATE TABLE entrycat(entry_id INTEGER NOT NULL, cat_id INTEGER NOT NULL)`,
+		`INSERT INTO cat (cat_id, name) VALUES (1, 'General');`,
+		`INSERT INTO cat (name) VALUES ('Bookmarks');`,
+		`INSERT INTO cat (name) VALUES ('Tech');`,
 		`CREATE TABLE site (site_id INTEGER PRIMARY KEY NOT NULL, title TEXT NOT NULL, desc TEXT NOT NULL, gravityf REAL NOT NULL);`,
 		`INSERT INTO site (site_id, title, desc, gravityf) VALUES (1, 'newsboard', '', 1.0);`,
 		`CREATE VIEW totalvotes 
 AS 
 SELECT entry_id, COUNT(*) AS votes FROM entryvote GROUP BY entry_id;`,
 		`INSERT INTO entry (entry_id, thing, title, url, body, createdt, user_id, parent_id) VALUES (1, 0, 'newsboard - a hackernews clone', 'https://github.com/robdelacruz/newsboard', '', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 1, 0);`,
+		`INSERT INTO entrycat (entry_id, cat_id) VALUES (1, 1);`,
 		`INSERT INTO entrytag (entry_id, tag) VALUES (1, 'tech');`,
 		`INSERT INTO entrytag (entry_id, tag) VALUES (1, 'programming');`,
 		"COMMIT;",
@@ -1281,6 +1292,7 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		qlatest := r.FormValue("latest")
 		qusername := r.FormValue("username")
+		qcat := idtoi(r.FormValue("cat"))
 		qtag := r.FormValue("tag")
 		qoffset := atoi(r.FormValue("offset"))
 		if qoffset <= 0 {
@@ -1309,6 +1321,10 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
 LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ?`
 
+		if qcat != -1 {
+			join += " INNER JOIN entrycat ec ON e.entry_id = ec.entry_id AND ec.cat_id = ?"
+			qq = append(qq, qcat)
+		}
 		if qtag != "" {
 			join += " INNER JOIN entrytag et ON e.entry_id = et.entry_id AND et.tag = ?"
 			qq = append(qq, qtag)
@@ -1354,7 +1370,7 @@ LIMIT ? OFFSET ?`, join, where, orderby)
 		}
 		fmt.Fprintf(w, "</ul>\n")
 
-		baseurl := fmt.Sprintf("/?username=%s&tag=%s&latest=%s", qusername, qtag, qlatest)
+		baseurl := fmt.Sprintf("/?username=%s&cat=%s&tag=%s&latest=%s", qusername, qcat, qtag, qlatest)
 		printPagingNav(w, baseurl, qoffset, qlimit, nrows)
 		fmt.Fprintf(w, "</section>\n")
 		printPageFoot(w)
@@ -1590,6 +1606,11 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		var e Entry
 		var tags string
 
+		catid := idtoi(r.FormValue("cat"))
+		if catid == -1 {
+			catid = 1
+		}
+
 		var errmsg string
 		if r.Method == "POST" {
 			if !validateLogin(w, login) {
@@ -1628,10 +1649,22 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 					return
 				}
 
+				// Set category
+				s = "INSERT INTO entrycat (entry_id, cat_id) VALUES (?, ?)"
+				_, err = sqlexec(db, s, newid, catid)
+				if err != nil {
+					log.Printf("DB error setting submission category (%s)\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
 				// Add entry tags
 				tt := strings.Split(tags, ",")
 				for _, t := range tt {
 					t = strings.TrimSpace(t)
+					if t == "" {
+						continue
+					}
 					s := "INSERT INTO entrytag (entry_id, tag) VALUES (?, ?)"
 					_, err := sqlexec(db, s, newid, t)
 					if err != nil {
@@ -1682,6 +1715,26 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "  <div class=\"control\">\n")
 		fmt.Fprintf(w, "    <label for=\"body\">text</label>\n")
 		fmt.Fprintf(w, "    <textarea id=\"body\" name=\"body\" rows=\"6\" cols=\"60\">%s</textarea>\n", e.Body)
+		fmt.Fprintf(w, "  </div>\n")
+
+		fmt.Fprintf(w, "  <div class=\"control\">\n")
+		fmt.Fprintf(w, "    <label for=\"cat\">category</label>\n")
+		fmt.Fprintf(w, "    <select id=\"cat\" name=\"cat\">\n")
+		var cat Cat
+		s := "SELECT cat_id, name FROM cat ORDER BY cat_id"
+		rows, err := db.Query(s)
+		if handleDbErr(w, err, "submithandler") {
+			return
+		}
+		for rows.Next() {
+			rows.Scan(&cat.Catid, &cat.Name)
+			if cat.Catid == catid {
+				fmt.Fprintf(w, "<option value=\"%d\" selected>%s</option>\n", cat.Catid, cat.Name)
+				continue
+			}
+			fmt.Fprintf(w, "<option value=\"%d\">%s</option>\n", cat.Catid, cat.Name)
+		}
+		fmt.Fprintf(w, "    </select>\n")
 		fmt.Fprintf(w, "  </div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -1819,9 +1872,10 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		}
 
 		var e Entry
-		s := "SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, e.user_id FROM entry e WHERE e.entry_id = ?"
+		var catid int64
+		s := "SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, e.user_id, ec.cat_id FROM entry e LEFT OUTER JOIN entrycat ec ON e.entry_id = ec.entry_id WHERE e.entry_id = ?"
 		row := db.QueryRow(s, qentryid)
-		err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt, &e.Userid)
+		err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt, &e.Userid, &catid)
 		if handleDbErr(w, err, "edithandler") {
 			return
 		}
@@ -1846,6 +1900,7 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 				e.Url = strings.TrimSpace(r.FormValue("url"))
 				e.Body = strings.TrimSpace(r.FormValue("body"))
 				tags = strings.TrimSpace(r.FormValue("tags"))
+				catid = idtoi(r.FormValue("cat"))
 				if e.Title == "" {
 					errmsg = "Please enter a title."
 					break
@@ -1866,6 +1921,15 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 					break
 				}
 
+				// Set category
+				s = "UPDATE entrycat SET cat_id = ? WHERE entry_id = ?"
+				_, err = sqlexec(db, s, catid, qentryid)
+				if err != nil {
+					log.Printf("DB error updating submission category (%s)\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
 				// Update entry tags
 				s = "DELETE FROM entrytag WHERE entry_id = ?"
 				_, err = sqlexec(db, s, qentryid)
@@ -1878,6 +1942,9 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 				tt := strings.Split(tags, ",")
 				for _, t := range tt {
 					t = strings.TrimSpace(t)
+					if t == "" {
+						continue
+					}
 					s := "INSERT INTO entrytag (entry_id, tag) VALUES (?, ?)"
 					_, err := sqlexec(db, s, qentryid, t)
 					if err != nil {
@@ -1917,6 +1984,26 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintf(w, "  <div class=\"control\">\n")
 		fmt.Fprintf(w, "    <label for=\"body\">text</label>\n")
 		fmt.Fprintf(w, "    <textarea id=\"body\" name=\"body\" rows=\"6\" cols=\"60\">%s</textarea>\n", e.Body)
+		fmt.Fprintf(w, "  </div>\n")
+
+		fmt.Fprintf(w, "  <div class=\"control\">\n")
+		fmt.Fprintf(w, "    <label for=\"cat\">category</label>\n")
+		fmt.Fprintf(w, "    <select id=\"cat\" name=\"cat\">\n")
+		var cat Cat
+		s = "SELECT cat_id, name FROM cat ORDER BY cat_id"
+		rows, err := db.Query(s)
+		if handleDbErr(w, err, "submithandler") {
+			return
+		}
+		for rows.Next() {
+			rows.Scan(&cat.Catid, &cat.Name)
+			if cat.Catid == catid {
+				fmt.Fprintf(w, "<option value=\"%d\" selected>%s</option>\n", cat.Catid, cat.Name)
+				continue
+			}
+			fmt.Fprintf(w, "<option value=\"%d\">%s</option>\n", cat.Catid, cat.Name)
+		}
+		fmt.Fprintf(w, "    </select>\n")
 		fmt.Fprintf(w, "  </div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
