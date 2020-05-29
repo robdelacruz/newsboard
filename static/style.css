@@ -37,6 +37,7 @@
 .px-1 {padding-left: 0.25rem; padding-right: 0.25rem;}
 .mx-1 {margin-left: 0.25rem; margin-right: 0.25rem;}
 .mr-1 {margin-right: 0.25rem;}
+.mr-2 {margin-right: 0.5rem;}
 
 .text-xs {font-size: 0.75rem;}
 .text-sm {font-size: 0.875rem;}
@@ -52,6 +53,7 @@
 .text-fade-1 {color: var(--fade-1);}
 .text-fade-2 {color: var(--fade-2);}
 .text-italic {font-style: italic;}
+.text-bold {font-weight: bold;}
 
 .text-left {text-align: left;}
 .text-right {text-align: right;}
@@ -69,7 +71,12 @@
 .flex-grow-0 {flex-grow: 0;}
 .flex-shrink {flex-shrink: 1;}
 .flex-shrink-0 {flex-shrink: 0;}
+.justify-start {justify-content: flex-start;}
 .justify-between {justify-content: space-between;}
+
+.block {display: block;}
+.inline-block {display: inline-block;}
+.inline {display: inline;}
 
 p, ul, li, h1, h2, h3, h4, blockquote {
     margin: 0;
@@ -89,6 +96,7 @@ a, a:visited {
     border: 1px solid #ddd;
 }
 .btn-pill-0 {background-color: #ddd;}
+.tag-pill {background-color: #ddd; font-size: 0.875rem; padding-left: 0.25rem; padding-right: 0.25rem;}
 
 .heading {
     font-size: 1rem;
@@ -104,13 +112,13 @@ a, a:visited {
     margin-left: 2rem;
 }
 
+.list-none {list-style-type: none;}
 .vertical-list {
     list-style-type: none;
 }
 .vertical-list li {
     margin-bottom: 0.5rem;
 }
-
 .line-menu {
     list-style-type: none;
 }

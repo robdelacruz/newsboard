@@ -477,7 +477,7 @@ func printPageNav(w http.ResponseWriter, db *sql.DB, login *User, site *Site) {
 	fmt.Fprintf(w, "<header class=\"masthead mb-sm\">\n")
 
 	// First row nav
-	fmt.Fprintf(w, "<nav class=\"navbar mb-xs\">\n")
+	fmt.Fprintf(w, "<nav class=\"navbar\">\n")
 	// Menu section (left part)
 	fmt.Fprintf(w, "<div>\n")
 	title := site.Title
@@ -506,23 +506,6 @@ func printPageNav(w http.ResponseWriter, db *sql.DB, login *User, site *Site) {
 	}
 	fmt.Fprintf(w, "</ul>\n")
 	fmt.Fprintf(w, "</nav>\n")
-
-	// 2nd row nav
-	fmt.Fprintf(w, "<nav class=\"navbar\">\n")
-	fmt.Fprintf(w, "<div>\n")
-	fmt.Fprintf(w, "<ul class=\"line-menu\">\n")
-	var cat Cat
-	s := "SELECT cat_id, name FROM cat ORDER BY cat_id"
-	rows, _ := db.Query(s)
-	for rows.Next() {
-		rows.Scan(&cat.Catid, &cat.Name)
-		url := fmt.Sprintf("/?cat=%d", cat.Catid)
-		fmt.Fprintf(w, "<li><a href=\"%s\">%s</a></li>\n", url, cat.Name)
-	}
-	fmt.Fprintf(w, "</ul>\n")
-	fmt.Fprintf(w, "</div>\n")
-	fmt.Fprintf(w, "</nav>\n")
-
 	fmt.Fprintf(w, "</header>\n")
 }
 
@@ -1185,7 +1168,7 @@ func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, e 
 	}
 	// tags
 	for _, t := range tt {
-		fmt.Fprintf(w, " <span class=\"text-fade-2 btn-pill-0 text-sm px-1\"><a class=\"no-underline\"href=\"/?tag=%s\">%s</a></span>\n", t, t)
+		fmt.Fprintf(w, " <span class=\"tag-pill text-fade-2\"><a class=\"no-underline\"href=\"/?tag=%s\">%s</a></span>\n", t, t)
 	}
 
 	fmt.Fprintf(w, "</div>\n")
@@ -1326,6 +1309,33 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 
+		// Inner heading
+		fmt.Fprintf(w, "<div class=\"flex justify-start mb-base\">\n")
+		fmt.Fprintf(w, "  <ul class=\"line-menu mr-2\">\n")
+		var cat Cat
+		s := "SELECT cat_id, name FROM cat ORDER BY cat_id"
+		rows, _ := db.Query(s)
+		for rows.Next() {
+			rows.Scan(&cat.Catid, &cat.Name)
+			url := fmt.Sprintf("/?cat=%d", cat.Catid)
+			if cat.Catid == qcat {
+				fmt.Fprintf(w, "<li><a class=\"no-underline text-bold\" href=\"%s\">%s</a></li>\n", url, cat.Name)
+				continue
+			}
+			fmt.Fprintf(w, "<li><a class=\"no-underline\" href=\"%s\">%s</a></li>\n", url, cat.Name)
+		}
+		fmt.Fprintf(w, "  </ul>\n")
+
+		fmt.Fprintf(w, "  <ul class=\"list-none\">\n")
+		if qusername != "" {
+			fmt.Fprintf(w, "    <li class=\"inline tag-pill mr-1\">%s</li>\n", qusername)
+		}
+		if qtag != "" {
+			fmt.Fprintf(w, "    <li class=\"inline tag-pill mr-1\">%s</li>\n", qtag)
+		}
+		fmt.Fprintf(w, "  </ul>\n")
+		fmt.Fprintf(w, "</div>\n")
+
 		orderby := "points DESC, e.createdt DESC"
 		if qlatest != "" {
 			orderby = "e.createdt DESC"
@@ -1352,7 +1362,7 @@ LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ?`
 		}
 		qq = append(qq, qlimit, qoffset)
 
-		s := fmt.Sprintf(`SELECT e.entry_id, e.title, e.url, e.createdt, 
+		s = fmt.Sprintf(`SELECT e.entry_id, e.title, e.url, e.createdt, 
 IFNULL(u.user_id, 0), IFNULL(u.username, ''),  
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
 IFNULL(totalvotes.votes, 0),
