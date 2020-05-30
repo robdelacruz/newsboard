@@ -125,6 +125,9 @@ Initialize new newsboard file:
 	http.HandleFunc("/usersetup/", usersetupHandler(db))
 	http.HandleFunc("/edituser/", edituserHandler(db))
 	http.HandleFunc("/activateuser/", activateuserHandler(db))
+	http.HandleFunc("/createcat/", createcatHandler(db))
+	http.HandleFunc("/editcat/", editcatHandler(db))
+	http.HandleFunc("/delcat/", delcatHandler(db))
 	http.HandleFunc("/", indexHandler(db))
 	http.HandleFunc("/item/", itemHandler(db))
 	http.HandleFunc("/submit/", submitHandler(db))
@@ -445,6 +448,21 @@ func querySite(db *sql.DB) *Site {
 		site.Gravityf = 1.5
 	}
 	return &site
+}
+
+func queryCat(db *sql.DB, catid int64) *Cat {
+	var cat Cat
+	s := "SELECT cat_id, name FROM cat WHERE cat_id = ?"
+	row := db.QueryRow(s, catid)
+	err := row.Scan(&cat.Catid, &cat.Name)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		fmt.Printf("queryCat() db error (%s)\n", err)
+		return nil
+	}
+	return &cat
 }
 
 func printPageHead(w io.Writer, jsurls []string, cssurls []string) {
@@ -827,15 +845,37 @@ func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "</form>\n")
 
-		fmt.Fprintf(w, "<h1 class=\"heading mb-base\">Users</h1>\n")
-		s := "SELECT user_id, username, active, email FROM user ORDER BY username"
+		// Categories
+		fmt.Fprintf(w, "<h1 class=\"heading mb-sm\">Categories</h1>\n")
+		fmt.Fprintf(w, "<ul class=\"vertical-list mb-xl\">\n")
+		fmt.Fprintf(w, "  <li><a class=\"text-fade-2 text-xs\" href=\"/createcat/?from=%s\">create new category</a></li>\n", url.QueryEscape("/adminsetup/"))
+		var cat Cat
+		s := "SELECT cat_id, name FROM cat ORDER BY cat_id"
+		rows, _ := db.Query(s)
+		for rows.Next() {
+			rows.Scan(&cat.Catid, &cat.Name)
+			fmt.Fprintf(w, "<li>\n")
+			fmt.Fprintf(w, "  <div>%s</div>\n", cat.Name)
+			fmt.Fprintf(w, "  <ul class=\"line-menu text-fade-2 text-xs\">\n")
+			fmt.Fprintf(w, "    <li><a href=\"/editcat?catid=%d&from=%s\">edit</a></li>\n", cat.Catid, url.QueryEscape("/adminsetup/"))
+			if cat.Catid != 1 {
+				fmt.Fprintf(w, "    <li><a href=\"/delcat?catid=%d&from=%s\">delete</a></li>\n", cat.Catid, url.QueryEscape("/adminsetup/"))
+			}
+			fmt.Fprintf(w, "  </ul>\n")
+			fmt.Fprintf(w, "</li>\n")
+		}
+		fmt.Fprintf(w, "</ul>\n")
+
+		// Users
+		fmt.Fprintf(w, "<h1 class=\"heading mb-sm\">Users</h1>\n")
+		s = "SELECT user_id, username, active, email FROM user ORDER BY username"
 		rows, err := db.Query(s)
 		if handleDbErr(w, err, "adminsetuphandler") {
 			return
 		}
 
 		var u User
-		fmt.Fprintf(w, "<ul class=\"vertical-list\">\n")
+		fmt.Fprintf(w, "<ul class=\"vertical-list mb-xl\">\n")
 		for rows.Next() {
 			rows.Scan(&u.Userid, &u.Username, &u.Active, &u.Email)
 			fmt.Fprintf(w, "<li>\n")
@@ -2187,6 +2227,229 @@ func unvoteHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		bs, _ := json.Marshal(vr)
 		w.WriteHeader(200)
 		w.Write(bs)
+	}
+}
+
+func createcatHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var errmsg string
+		var cat Cat
+
+		qfrom := r.FormValue("from")
+
+		login := getLoginUser(r, db)
+		if login.Userid != ADMIN_ID {
+			log.Printf("create cat: admin not logged in\n")
+			http.Error(w, "admin required", 401)
+			return
+		}
+
+		if r.Method == "POST" {
+			cat.Name = strings.TrimSpace(r.FormValue("name"))
+
+			for {
+				if cat.Name == "" {
+					errmsg = "Please enter a category name."
+					break
+				}
+
+				var err error
+				s := "INSERT INTO cat (name) VALUES (?)"
+				_, err = sqlexec(db, s, cat.Name)
+				if err != nil {
+					log.Printf("DB error creating cat: %s\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
+				http.Redirect(w, r, unescapeUrl(qfrom), http.StatusSeeOther)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, db, login, querySite(db))
+
+		fmt.Fprintf(w, "<div class=\"main\">\n")
+		fmt.Fprintf(w, "<section class=\"main-content\">\n")
+		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/createcat/?from=%s\" method=\"post\">\n", url.QueryEscape(qfrom))
+		fmt.Fprintf(w, "<h1 class=\"heading\">Create Category</h1>")
+		if errmsg != "" {
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+			fmt.Fprintf(w, "</div>\n")
+		}
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"name\">category name</label>\n")
+		fmt.Fprintf(w, "<input id=\"name\" name=\"name\" type=\"text\" size=\"20\" value=\"%s\">\n", cat.Name)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<button class=\"submit\">create category</button>\n")
+		fmt.Fprintf(w, "</div>\n")
+		fmt.Fprintf(w, "</form>\n")
+		fmt.Fprintf(w, "</section>\n")
+
+		fmt.Fprintf(w, "</div>\n")
+		printPageFoot(w)
+	}
+}
+
+func editcatHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var errmsg string
+
+		qfrom := r.FormValue("from")
+		qcatid := idtoi(r.FormValue("catid"))
+		if qcatid == -1 {
+			log.Printf("edit cat: no catid\n")
+			http.Error(w, "missing catid parameter", 401)
+			return
+		}
+
+		login := getLoginUser(r, db)
+		if login.Userid != ADMIN_ID {
+			log.Printf("edit cat: admin not logged in\n")
+			http.Error(w, "admin required", 401)
+			return
+		}
+
+		cat := queryCat(db, qcatid)
+		if cat == nil {
+			log.Printf("edit cat: catid %d doesn't exist\n", qcatid)
+			http.Error(w, "cat doesn't exist", 401)
+			return
+		}
+
+		if r.Method == "POST" {
+			cat.Name = strings.TrimSpace(r.FormValue("name"))
+
+			for {
+				if cat.Name == "" {
+					errmsg = "Please enter a category name."
+					break
+				}
+
+				var err error
+				s := "UPDATE cat SET name = ? WHERE cat_id = ?"
+				_, err = sqlexec(db, s, cat.Name, qcatid)
+				if err != nil {
+					log.Printf("DB error updating cat: %s\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
+				http.Redirect(w, r, unescapeUrl(qfrom), http.StatusSeeOther)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, db, login, querySite(db))
+
+		fmt.Fprintf(w, "<div class=\"main\">\n")
+		fmt.Fprintf(w, "<section class=\"main-content\">\n")
+		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/editcat/?catid=%d&from=%s\" method=\"post\">\n", qcatid, url.QueryEscape(qfrom))
+		fmt.Fprintf(w, "<h1 class=\"heading\">Edit Category</h1>")
+		if errmsg != "" {
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+			fmt.Fprintf(w, "</div>\n")
+		}
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<label for=\"name\">category name</label>\n")
+		fmt.Fprintf(w, "<input id=\"name\" name=\"name\" type=\"text\" size=\"20\" value=\"%s\">\n", cat.Name)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<button class=\"submit\">update category</button>\n")
+		fmt.Fprintf(w, "</div>\n")
+		fmt.Fprintf(w, "</form>\n")
+		fmt.Fprintf(w, "</section>\n")
+
+		fmt.Fprintf(w, "</div>\n")
+		printPageFoot(w)
+	}
+}
+
+func delcatHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var errmsg string
+
+		qfrom := r.FormValue("from")
+		qcatid := idtoi(r.FormValue("catid"))
+		if qcatid == -1 {
+			log.Printf("del cat: no catid\n")
+			http.Error(w, "missing catid parameter", 401)
+			return
+		}
+
+		login := getLoginUser(r, db)
+		if login.Userid != ADMIN_ID {
+			log.Printf("del cat: admin not logged in\n")
+			http.Error(w, "admin required", 401)
+			return
+		}
+
+		cat := queryCat(db, qcatid)
+		if cat == nil {
+			log.Printf("del cat: catid %d doesn't exist\n", qcatid)
+			http.Error(w, "cat doesn't exist", 401)
+			return
+		}
+
+		if r.Method == "POST" {
+			for {
+				var err error
+				s := "DELETE FROM cat WHERE cat_id = ?"
+				_, err = sqlexec(db, s, qcatid)
+				if err != nil {
+					log.Printf("DB error deleting cat: %s\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
+				s = "UPDATE entrycat SET cat_id = 1 WHERE cat_id = ?"
+				_, err = sqlexec(db, s, qcatid)
+				if err != nil {
+					log.Printf("DB error resetting entrycat: %s\n", err)
+					errmsg = "A problem occured. Please try again."
+					break
+				}
+
+				http.Redirect(w, r, unescapeUrl(qfrom), http.StatusSeeOther)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		printPageHead(w, nil, nil)
+		printPageNav(w, db, login, querySite(db))
+
+		fmt.Fprintf(w, "<div class=\"main\">\n")
+		fmt.Fprintf(w, "<section class=\"main-content\">\n")
+		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/delcat/?catid=%d&from=%s\" method=\"post\">\n", qcatid, url.QueryEscape(qfrom))
+		fmt.Fprintf(w, "<h1 class=\"heading\">Delete Category</h1>")
+		if errmsg != "" {
+			fmt.Fprintf(w, "<div class=\"control\">\n")
+			fmt.Fprintf(w, "<p class=\"error\">%s</p>\n", errmsg)
+			fmt.Fprintf(w, "</div>\n")
+		}
+		fmt.Fprintf(w, "<div class=\"control displayonly\">\n")
+		fmt.Fprintf(w, "<label for=\"name\">category name</label>\n")
+		fmt.Fprintf(w, "<input id=\"name\" name=\"name\" type=\"text\" size=\"20\" readonly value=\"%s\">\n", cat.Name)
+		fmt.Fprintf(w, "</div>\n")
+
+		fmt.Fprintf(w, "<div class=\"control\">\n")
+		fmt.Fprintf(w, "<button class=\"submit\">delete category</button>\n")
+		fmt.Fprintf(w, "</div>\n")
+		fmt.Fprintf(w, "</form>\n")
+		fmt.Fprintf(w, "</section>\n")
+
+		fmt.Fprintf(w, "</div>\n")
+		printPageFoot(w)
 	}
 }
 
