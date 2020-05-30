@@ -358,9 +358,7 @@ func createAndInitTables(newfile string) {
 		`CREATE TABLE entrytag(entry_id INTEGER NOT NULL, tag TEXT NOT NULL)`,
 		`CREATE TABLE cat(cat_id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL)`,
 		`CREATE TABLE entrycat(entry_id INTEGER NOT NULL, cat_id INTEGER NOT NULL)`,
-		`INSERT INTO cat (cat_id, name) VALUES (1, 'General');`,
-		`INSERT INTO cat (name) VALUES ('Bookmarks');`,
-		`INSERT INTO cat (name) VALUES ('Tech');`,
+		`INSERT INTO cat (cat_id, name) VALUES (1, 'Main');`,
 		`CREATE TABLE site (site_id INTEGER PRIMARY KEY NOT NULL, title TEXT NOT NULL, desc TEXT NOT NULL, gravityf REAL NOT NULL);`,
 		`INSERT INTO site (site_id, title, desc, gravityf) VALUES (1, 'newsboard', '', 1.0);`,
 		`CREATE VIEW totalvotes 
@@ -368,8 +366,6 @@ AS
 SELECT entry_id, COUNT(*) AS votes FROM entryvote GROUP BY entry_id;`,
 		`INSERT INTO entry (entry_id, thing, title, url, body, createdt, user_id, parent_id) VALUES (1, 0, 'newsboard - a hackernews clone', 'https://github.com/robdelacruz/newsboard', '', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 1, 0);`,
 		`INSERT INTO entrycat (entry_id, cat_id) VALUES (1, 1);`,
-		`INSERT INTO entrytag (entry_id, tag) VALUES (1, 'tech');`,
-		`INSERT INTO entrytag (entry_id, tag) VALUES (1, 'programming');`,
 		"COMMIT;",
 	}
 
@@ -1184,7 +1180,7 @@ func printCommentMarker(w http.ResponseWriter) {
 	fmt.Fprintf(w, "</svg>\n")
 }
 
-func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, e *Entry, tt []string, submitter *User, login *User, ncomments, totalvotes int, selfvote int, points float64, showBody bool) {
+func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, qcatid int64, e *Entry, tt []string, submitter *User, login *User, ncomments, totalvotes int, selfvote int, points float64, showBody bool) {
 	screatedt := parseIsoDate(e.Createdt)
 	itemurl := createItemUrl(e.Entryid)
 	entryurl := e.Url
@@ -1212,14 +1208,14 @@ func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, e 
 	}
 	// tags
 	for _, t := range tt {
-		fmt.Fprintf(w, " <span class=\"tag-pill text-fade-2\"><a class=\"no-underline\"href=\"/?tag=%s\">%s</a></span>\n", t, t)
+		fmt.Fprintf(w, " <span class=\"tag-pill text-fade-2\"><a class=\"no-underline\"href=\"/?cat=%d&tag=%s\">%s</a></span>\n", qcatid, t, t)
 	}
 
 	fmt.Fprintf(w, "</div>\n")
 	fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 	npoints := int(math.Floor(points))
 	fmt.Fprintf(w, "  <li>%d %s</li>\n", npoints, getPointCountUnit(npoints))
-	fmt.Fprintf(w, "  <li><a href=\"/?username=%s\">%s</a></li>\n", submitter.Username, submitter.Username)
+	fmt.Fprintf(w, "  <li><a href=\"/?cat=%d&username=%s\">%s</a></li>\n", qcatid, submitter.Username, submitter.Username)
 	if login.Userid == ADMIN_ID || submitter.Userid == login.Userid {
 		fmt.Fprintf(w, "  <li><a class=\"\" href=\"/edit/?id=%d&from=%s\">edit</a></li>\n", e.Entryid, url.QueryEscape(r.RequestURI))
 	}
@@ -1337,6 +1333,9 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		qlatest := r.FormValue("latest")
 		qusername := r.FormValue("username")
 		qcat := idtoi(r.FormValue("cat"))
+		if qcat == -1 {
+			qcat = 1
+		}
 		qtag := r.FormValue("tag")
 		qoffset := atoi(r.FormValue("offset"))
 		if qoffset <= 0 {
@@ -1435,7 +1434,7 @@ LIMIT ? OFFSET ?`, join, where, orderby)
 			fmt.Fprintf(w, "<li>\n")
 
 			tt, _ := queryEntryTags(db, e.Entryid)
-			printSubmissionEntry(w, r, db, &e, tt, &u, login, ncomments, totalvotes, selfvote, points, false)
+			printSubmissionEntry(w, r, db, qcat, &e, tt, &u, login, ncomments, totalvotes, selfvote, points, false)
 			fmt.Fprintf(w, "</li>\n")
 			nrows++
 		}
@@ -1547,13 +1546,14 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		var u User
 		var e Entry
+		var catid int64
 		var p Entry // parent
 		var ncomments int
 		var totalvotes int
 		var selfvote int
 		var points float64
 
-		s := `SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, 
+		s := `SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, ec.cat_id, 
 IFNULL(p.entry_id, 0), IFNULL(p.thing, 0), IFNULL(p.title, ''), IFNULL(p.url, ''), IFNULL(p.body, ''), IFNULL(p.createdt, ''), 
 IFNULL(u.user_id, 0), IFNULL(u.username, ''), IFNULL(u.active, 0), IFNULL(u.email, ''),  
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
@@ -1562,12 +1562,13 @@ CASE WHEN ev.entry_id IS NOT NULL THEN 1 ELSE 0 END,
 calculate_points(IFNULL(totalvotes.votes, 0), e.createdt, ?) AS points
 FROM entry e 
 LEFT OUTER JOIN user u ON e.user_id = u.user_id 
+LEFT OUTER JOIN entrycat ec ON e.entry_id = ec.entry_id 
 LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
 LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ?
 LEFT OUTER JOIN entry p ON e.parent_id = p.entry_id 
 WHERE e.entry_id = ?`
 		row := db.QueryRow(s, site.Gravityf, login.Userid, qentryid)
-		err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt,
+		err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt, &catid,
 			&p.Entryid, &p.Thing, &p.Title, &p.Url, &p.Body, &p.Createdt,
 			&u.Userid, &u.Username, &u.Active, &u.Email,
 			&ncomments, &totalvotes, &selfvote, &points)
@@ -1614,7 +1615,7 @@ WHERE e.entry_id = ?`
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		if e.Thing == SUBMISSION {
 			tt, _ := queryEntryTags(db, e.Entryid)
-			printSubmissionEntry(w, r, db, &e, tt, &u, login, ncomments, totalvotes, selfvote, points, true)
+			printSubmissionEntry(w, r, db, catid, &e, tt, &u, login, ncomments, totalvotes, selfvote, points, true)
 		} else if e.Thing == COMMENT {
 			printCommentEntry(w, db, &e, &u, &p, ncomments)
 		}
