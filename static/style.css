@@ -95,8 +95,8 @@ a, a:visited {
 .box {
     border: 1px solid #ddd;
 }
-.btn-pill-0 {background-color: #ddd;}
-.tag-pill {background-color: #ddd; font-size: 0.875rem; padding-left: 0.25rem; padding-right: 0.25rem;}
+.btn-pill-0 {background-color: rgba(27,31,35,.05); padding: 0.2em 0.4em; border-radius: 3px;}
+.tag-pill {background-color: rgba(27,31,35,.05); padding: 0.2em 0.4em; border-radius: 3px; font-size: 0.875rem;}
 
 .heading {
     font-size: 1rem;
