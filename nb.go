@@ -68,6 +68,13 @@ type VoteResult struct {
 	TotalVotes int   `json:"totalvotes"`
 }
 
+type QIndex struct {
+	Latest   string
+	Username string
+	Cat      int64
+	Tag      string
+}
+
 func main() {
 	os.Args = os.Args[1:]
 	sw, parms := parseArgs(os.Args)
@@ -490,7 +497,7 @@ func printPageFoot(w io.Writer) {
 	fmt.Fprintf(w, "</html>\n")
 }
 
-func printPageNav(w http.ResponseWriter, db *sql.DB, login *User, site *Site) {
+func printPageNav(w http.ResponseWriter, db *sql.DB, login *User, site *Site, qq *QIndex) {
 	fmt.Fprintf(w, "<header class=\"masthead mb-sm\">\n")
 
 	// First row nav
@@ -499,7 +506,15 @@ func printPageNav(w http.ResponseWriter, db *sql.DB, login *User, site *Site) {
 	fmt.Fprintf(w, "<div>\n")
 	fmt.Fprintf(w, "<h1 class=\"heading\"><a href=\"/\">%s</a></h1>\n", site.Title)
 	fmt.Fprintf(w, "<ul class=\"line-menu\">\n")
-	fmt.Fprintf(w, "  <li><a href=\"/?latest=1\">latest</a></li>\n")
+	if qq != nil {
+		if qq.Latest != "" {
+			fmt.Fprintf(w, "  <li><a href=\"/?username=%s&cat=%d&tag=%s&latest=1\">[latest]</a></li>\n", qq.Username, qq.Cat, qq.Tag)
+		} else {
+			fmt.Fprintf(w, "  <li><a href=\"/?username=%s&cat=%d&tag=%s&latest=1\">latest</a></li>\n", qq.Username, qq.Cat, qq.Tag)
+		}
+	} else {
+		fmt.Fprintf(w, "  <li><a href=\"/?latest=1\">latest</a></li>\n")
+	}
 	if login.Userid != -1 && login.Active {
 		fmt.Fprintf(w, "  <li><a href=\"/submit/\">submit</a></li>\n")
 	}
@@ -608,7 +623,7 @@ func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		site := querySite(db)
 		printPageHead(w, nil, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/login/?from=%s\" method=\"post\">\n", url.QueryEscape(qfrom))
@@ -717,7 +732,7 @@ func createaccountHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		site := querySite(db)
 		printPageHead(w, nil, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		fmt.Fprintf(w, "<form class=\"simpleform\" action=\"/createaccount/?from=%s\" method=\"post\">\n", url.QueryEscape(qfrom))
@@ -808,7 +823,7 @@ func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
 		printPageHead(w, nil, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 
@@ -912,7 +927,7 @@ func usersetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		site := querySite(db)
 		printPageHead(w, nil, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 
 		fmt.Fprintf(w, "<p class=\"\"><a href=\"/edituser?userid=%d&from=%s\">Edit Account</a></p>\n", login.Userid, url.QueryEscape("/usersetup/"))
@@ -1003,7 +1018,7 @@ func edituserHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		site := querySite(db)
 		printPageHead(w, nil, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 
 		fmt.Fprintf(w, "<div class=\"main\">\n")
 		fmt.Fprintf(w, "<section class=\"main-content\">\n")
@@ -1103,7 +1118,7 @@ func activateuserHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		site := querySite(db)
 		printPageHead(w, nil, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 
 		fmt.Fprintf(w, "<div class=\"main\">\n")
 		fmt.Fprintf(w, "<section class=\"main-content\">\n")
@@ -1180,7 +1195,7 @@ func printCommentMarker(w http.ResponseWriter) {
 	fmt.Fprintf(w, "</svg>\n")
 }
 
-func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, qcatid int64, e *Entry, tt []string, submitter *User, login *User, ncomments, totalvotes int, selfvote int, points float64, showBody bool) {
+func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, qi *QIndex, e *Entry, tt []string, submitter *User, login *User, ncomments, totalvotes int, selfvote int, points float64, showBody bool) {
 	screatedt := parseIsoDate(e.Createdt)
 	itemurl := createItemUrl(e.Entryid)
 	entryurl := e.Url
@@ -1208,14 +1223,14 @@ func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, qc
 	}
 	// tags
 	for _, t := range tt {
-		fmt.Fprintf(w, " <span class=\"tag-pill text-fade-2\"><a class=\"no-underline\"href=\"/?cat=%d&tag=%s\">%s</a></span>\n", qcatid, t, t)
+		fmt.Fprintf(w, " <span class=\"tag-pill text-fade-2\"><a class=\"no-underline\"href=\"/?cat=%d&tag=%s&latest=%s\">%s</a></span>\n", qi.Cat, t, qi.Latest, t)
 	}
 
 	fmt.Fprintf(w, "</div>\n")
 	fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 	npoints := int(math.Floor(points))
 	fmt.Fprintf(w, "  <li>%d %s</li>\n", npoints, getPointCountUnit(npoints))
-	fmt.Fprintf(w, "  <li><a href=\"/?cat=%d&username=%s\">%s</a></li>\n", qcatid, submitter.Username, submitter.Username)
+	fmt.Fprintf(w, "  <li><a href=\"/?cat=%d&username=%s&latest=%s\">%s</a></li>\n", qi.Cat, submitter.Username, qi.Latest, submitter.Username)
 	if login.Userid == ADMIN_ID || submitter.Userid == login.Userid {
 		fmt.Fprintf(w, "  <li><a class=\"\" href=\"/edit/?id=%d&from=%s\">edit</a></li>\n", e.Entryid, url.QueryEscape(r.RequestURI))
 	}
@@ -1334,7 +1349,7 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		qusername := r.FormValue("username")
 		qcat := idtoi(r.FormValue("cat"))
 		if qcat == -1 {
-			qcat = 1
+			qcat = 0
 		}
 		qtag := r.FormValue("tag")
 		qoffset := atoi(r.FormValue("offset"))
@@ -1348,13 +1363,25 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
 		printPageHead(w, []string{"/static/handlevote.js"}, nil, site)
-		printPageNav(w, db, login, site)
+
+		qi := &QIndex{
+			Latest:   qlatest,
+			Username: qusername,
+			Cat:      qcat,
+			Tag:      qtag,
+		}
+		printPageNav(w, db, login, site, qi)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 
 		// Inner heading
 		fmt.Fprintf(w, "<div class=\"flex justify-start mb-base\">\n")
 		fmt.Fprintf(w, "  <ul class=\"line-menu mr-2\">\n")
+		if qcat <= 0 {
+			fmt.Fprintf(w, "<li><a class=\"no-underline text-bold\" href=\"/?cat=0\">All</a></li>\n")
+		} else {
+			fmt.Fprintf(w, "<li><a class=\"no-underline\" href=\"/?cat=0\">All</a></li>\n")
+		}
 		var cat Cat
 		s := "SELECT cat_id, name FROM cat ORDER BY cat_id"
 		rows, _ := db.Query(s)
@@ -1391,7 +1418,7 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 LEFT OUTER JOIN totalvotes ON e.entry_id = totalvotes.entry_id 
 LEFT OUTER JOIN entryvote ev ON ev.entry_id = e.entry_id AND ev.user_id = ?`
 
-		if qcat != -1 {
+		if qcat > 0 {
 			join += " INNER JOIN entrycat ec ON e.entry_id = ec.entry_id AND ec.cat_id = ?"
 			qq = append(qq, qcat)
 		}
@@ -1434,7 +1461,7 @@ LIMIT ? OFFSET ?`, join, where, orderby)
 			fmt.Fprintf(w, "<li>\n")
 
 			tt, _ := queryEntryTags(db, e.Entryid)
-			printSubmissionEntry(w, r, db, qcat, &e, tt, &u, login, ncomments, totalvotes, selfvote, points, false)
+			printSubmissionEntry(w, r, db, qi, &e, tt, &u, login, ncomments, totalvotes, selfvote, points, false)
 			fmt.Fprintf(w, "</li>\n")
 			nrows++
 		}
@@ -1610,12 +1637,13 @@ WHERE e.entry_id = ?`
 
 		w.Header().Set("Content-Type", "text/html")
 		printPageHead(w, []string{"/static/handlevote.js"}, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 		if e.Thing == SUBMISSION {
 			tt, _ := queryEntryTags(db, e.Entryid)
-			printSubmissionEntry(w, r, db, catid, &e, tt, &u, login, ncomments, totalvotes, selfvote, points, true)
+			qi := &QIndex{Cat: catid}
+			printSubmissionEntry(w, r, db, qi, &e, tt, &u, login, ncomments, totalvotes, selfvote, points, true)
 		} else if e.Thing == COMMENT {
 			printCommentEntry(w, db, &e, &u, &p, ncomments)
 		}
@@ -1754,7 +1782,7 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		site := querySite(db)
 		printPageHead(w, nil, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 
 		fmt.Fprintf(w, "<form class=\"simpleform mb-2xl\" method=\"post\" action=\"/submit/\">\n")
@@ -1902,7 +1930,7 @@ func delHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		site := querySite(db)
 		printPageHead(w, nil, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 
 		fmt.Fprintf(w, "<form class=\"simpleform mb-2xl\" method=\"post\" action=\"/del/?id=%d&from=%s\">\n", qentryid, url.QueryEscape(qfrom))
@@ -2036,7 +2064,7 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		site := querySite(db)
 		printPageHead(w, nil, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 		fmt.Fprintf(w, "<section class=\"main\">\n")
 
 		fmt.Fprintf(w, "<form class=\"simpleform mb-2xl\" method=\"post\" action=\"/edit/?id=%d\">\n", qentryid)
@@ -2278,7 +2306,7 @@ func createcatHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		site := querySite(db)
 		printPageHead(w, nil, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 
 		fmt.Fprintf(w, "<div class=\"main\">\n")
 		fmt.Fprintf(w, "<section class=\"main-content\">\n")
@@ -2357,7 +2385,7 @@ func editcatHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		site := querySite(db)
 		printPageHead(w, nil, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 
 		fmt.Fprintf(w, "<div class=\"main\">\n")
 		fmt.Fprintf(w, "<section class=\"main-content\">\n")
@@ -2437,7 +2465,7 @@ func delcatHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		site := querySite(db)
 		printPageHead(w, nil, nil, site)
-		printPageNav(w, db, login, site)
+		printPageNav(w, db, login, site, nil)
 
 		fmt.Fprintf(w, "<div class=\"main\">\n")
 		fmt.Fprintf(w, "<section class=\"main-content\">\n")
