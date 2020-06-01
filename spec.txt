@@ -1,8 +1,6 @@
 Functions needed:
-- Add categories. Admin creates categories, default 'Uncategorized'.
-- Add search, page to browse categories, users?, tags? 
-- Section showing categories and tags to browse.
-- Use html for submissions text? Auto-detect http:// links?
+- Add search. 
+- Show full list of tags.
 - Moderator functions: moderator users can delete/edit submissions.
 
 
