@@ -3,7 +3,7 @@ all: nb initdata
 dep:
 	go get -u github.com/mattn/go-sqlite3
 	go get -u golang.org/x/crypto/bcrypt
-	go get -u gopkg.in/russross/blackfriday.v2
+	go get github.com/shurcooL/github_flavored_markdown
 
 nb: nb.go
 	go build -o nb nb.go

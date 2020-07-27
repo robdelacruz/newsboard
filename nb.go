@@ -22,8 +22,8 @@ import (
 	"time"
 
 	sqlite "github.com/mattn/go-sqlite3"
+	"github.com/shurcooL/github_flavored_markdown"
 	"golang.org/x/crypto/bcrypt"
-	"gopkg.in/russross/blackfriday.v2"
 )
 
 const ADMIN_ID = 1
@@ -328,7 +328,8 @@ func txexec(tx *sql.Tx, s string, pp ...interface{}) (sql.Result, error) {
 }
 
 func parseMarkdown(s string) string {
-	return string(blackfriday.Run([]byte(s), blackfriday.WithExtensions(blackfriday.HardLineBreak)))
+	s = strings.ReplaceAll(s, "%", "%%")
+	return string(github_flavored_markdown.Markdown([]byte(s)))
 }
 
 func parseTextLinks(body string) string {
@@ -1580,7 +1581,7 @@ func itemHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		var selfvote int
 		var points float64
 
-		s := `SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, ec.cat_id, 
+		s := `SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, IFNULL(ec.cat_id, 0), 
 IFNULL(p.entry_id, 0), IFNULL(p.thing, 0), IFNULL(p.title, ''), IFNULL(p.url, ''), IFNULL(p.body, ''), IFNULL(p.createdt, ''), 
 IFNULL(u.user_id, 0), IFNULL(u.username, ''), IFNULL(u.active, 0), IFNULL(u.email, ''),  
 (SELECT COUNT(*) FROM entry AS child WHERE child.parent_id = e.entry_id) AS ncomments, 
@@ -1975,7 +1976,7 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		var e Entry
 		var catid int64
-		s := "SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, e.user_id, ec.cat_id FROM entry e LEFT OUTER JOIN entrycat ec ON e.entry_id = ec.entry_id WHERE e.entry_id = ?"
+		s := "SELECT e.entry_id, e.thing, e.title, e.url, e.body, e.createdt, e.user_id, IFNULL(ec.cat_id, 0) FROM entry e LEFT OUTER JOIN entrycat ec ON e.entry_id = ec.entry_id WHERE e.entry_id = ?"
 		row := db.QueryRow(s, qentryid)
 		err := row.Scan(&e.Entryid, &e.Thing, &e.Title, &e.Url, &e.Body, &e.Createdt, &e.Userid, &catid)
 		if handleDbErr(w, err, "edithandler") {
