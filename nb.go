@@ -759,7 +759,7 @@ func createaccountHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		}
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"username\">username</label>\n")
-		fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" value=\"%s\">\n", f.username)
+		fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" maxlength=\"20\" value=\"%s\">\n", f.username)
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -851,7 +851,7 @@ func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		}
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"title\">site title</label>\n")
-		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"30\" maxlength=\"50\" value=\"%s\">\n", f.title)
+		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"30\" maxlength=\"50\" value=\"%s\">\n", escape(f.title))
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -882,7 +882,7 @@ func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		for rows.Next() {
 			rows.Scan(&cat.Catid, &cat.Name)
 			fmt.Fprintf(w, "<li>\n")
-			fmt.Fprintf(w, "  <div>%s</div>\n", cat.Name)
+			fmt.Fprintf(w, "  <div>%s</div>\n", escape(cat.Name))
 			fmt.Fprintf(w, "  <ul class=\"line-menu text-fade-2 text-xs\">\n")
 			fmt.Fprintf(w, "    <li><a href=\"/editcat?catid=%d&from=%s\">edit</a></li>\n", cat.Catid, url.QueryEscape("/adminsetup/"))
 			if cat.Catid != 1 {
@@ -907,9 +907,9 @@ func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			rows.Scan(&u.Userid, &u.Username, &u.Active, &u.Email)
 			fmt.Fprintf(w, "<li>\n")
 			if u.Active {
-				fmt.Fprintf(w, "<div>%s</div>\n", u.Username)
+				fmt.Fprintf(w, "<div>%s</div>\n", escape(u.Username))
 			} else {
-				fmt.Fprintf(w, "<div class=\"text-fade-2\">(%s)</div>\n", u.Username)
+				fmt.Fprintf(w, "<div class=\"text-fade-2\">(%s)</div>\n", escape(u.Username))
 			}
 
 			fmt.Fprintf(w, "<ul class=\"line-menu text-fade-2 text-xs\">\n")
@@ -1048,7 +1048,7 @@ func edituserHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		if qsetpwd != "" {
 			fmt.Fprintf(w, "<div class=\"control displayonly\">\n")
 			fmt.Fprintf(w, "<label for=\"username\">username</label>\n")
-			fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" value=\"%s\" readonly>\n", f.username)
+			fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" maxlength=\"20\" value=\"%s\" readonly>\n", f.username)
 			fmt.Fprintf(w, "</div>\n")
 
 			fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -1063,7 +1063,7 @@ func edituserHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		} else {
 			fmt.Fprintf(w, "<div class=\"control\">\n")
 			fmt.Fprintf(w, "<label for=\"username\">username</label>\n")
-			fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" value=\"%s\">\n", f.username)
+			fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" maxlength=\"20\" value=\"%s\">\n", f.username)
 			fmt.Fprintf(w, "</div>\n")
 
 			fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -1150,7 +1150,7 @@ func activateuserHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		}
 		fmt.Fprintf(w, "<div class=\"control displayonly\">\n")
 		fmt.Fprintf(w, "<label for=\"username\">username</label>\n")
-		fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" readonly value=\"%s\">\n", u.Username)
+		fmt.Fprintf(w, "<input id=\"username\" name=\"username\" type=\"text\" size=\"20\" maxlength=\"20\" readonly value=\"%s\">\n", u.Username)
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -1820,12 +1820,12 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"title\">title</label>\n")
-		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\">\n", e.Title)
+		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\">\n", escape(e.Title))
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"url\">url</label>\n")
-		fmt.Fprintf(w, "<input id=\"url\" name=\"url\" type=\"text\" size=\"60\" value=\"%s\">\n", e.Url)
+		fmt.Fprintf(w, "<input id=\"url\" name=\"url\" type=\"text\" size=\"60\" value=\"%s\">\n", escape(e.Url))
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "  <div class=\"control\">\n")
@@ -1845,17 +1845,17 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		for rows.Next() {
 			rows.Scan(&cat.Catid, &cat.Name)
 			if cat.Catid == catid {
-				fmt.Fprintf(w, "<option value=\"%d\" selected>%s</option>\n", cat.Catid, cat.Name)
+				fmt.Fprintf(w, "<option value=\"%d\" selected>%s</option>\n", cat.Catid, escape(cat.Name))
 				continue
 			}
-			fmt.Fprintf(w, "<option value=\"%d\">%s</option>\n", cat.Catid, cat.Name)
+			fmt.Fprintf(w, "<option value=\"%d\">%s</option>\n", cat.Catid, escape(cat.Name))
 		}
 		fmt.Fprintf(w, "    </select>\n")
 		fmt.Fprintf(w, "  </div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"tags\">tags</label>\n")
-		fmt.Fprintf(w, "<input id=\"tags\" name=\"tags\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\">\n", tags)
+		fmt.Fprintf(w, "<input id=\"tags\" name=\"tags\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\">\n", escape(tags))
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "  <div class=\"control\">\n")
@@ -2091,12 +2091,12 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"title\">title</label>\n")
-		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\">\n", e.Title)
+		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\">\n", escape(e.Title))
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"url\">url</label>\n")
-		fmt.Fprintf(w, "<input id=\"url\" name=\"url\" type=\"text\" size=\"60\" value=\"%s\">\n", e.Url)
+		fmt.Fprintf(w, "<input id=\"url\" name=\"url\" type=\"text\" size=\"60\" value=\"%s\">\n", escape(e.Url))
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "  <div class=\"control\">\n")
@@ -2116,17 +2116,17 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		for rows.Next() {
 			rows.Scan(&cat.Catid, &cat.Name)
 			if cat.Catid == catid {
-				fmt.Fprintf(w, "<option value=\"%d\" selected>%s</option>\n", cat.Catid, cat.Name)
+				fmt.Fprintf(w, "<option value=\"%d\" selected>%s</option>\n", cat.Catid, escape(cat.Name))
 				continue
 			}
-			fmt.Fprintf(w, "<option value=\"%d\">%s</option>\n", cat.Catid, cat.Name)
+			fmt.Fprintf(w, "<option value=\"%d\">%s</option>\n", cat.Catid, escape(cat.Name))
 		}
 		fmt.Fprintf(w, "    </select>\n")
 		fmt.Fprintf(w, "  </div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"tags\">tags</label>\n")
-		fmt.Fprintf(w, "<input id=\"tags\" name=\"tags\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\">\n", tags)
+		fmt.Fprintf(w, "<input id=\"tags\" name=\"tags\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\">\n", escape(tags))
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "  <div class=\"control\">\n")
@@ -2334,7 +2334,7 @@ func createcatHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		}
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"name\">category name</label>\n")
-		fmt.Fprintf(w, "<input id=\"name\" name=\"name\" type=\"text\" size=\"20\" value=\"%s\">\n", cat.Name)
+		fmt.Fprintf(w, "<input id=\"name\" name=\"name\" type=\"text\" size=\"20\" maxlength=\"20\" value=\"%s\">\n", escape(cat.Name))
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -2413,7 +2413,7 @@ func editcatHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		}
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"name\">category name</label>\n")
-		fmt.Fprintf(w, "<input id=\"name\" name=\"name\" type=\"text\" size=\"20\" value=\"%s\">\n", cat.Name)
+		fmt.Fprintf(w, "<input id=\"name\" name=\"name\" type=\"text\" size=\"20\" maxlength=\"20\" value=\"%s\">\n", escape(cat.Name))
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -2493,7 +2493,7 @@ func delcatHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		}
 		fmt.Fprintf(w, "<div class=\"control displayonly\">\n")
 		fmt.Fprintf(w, "<label for=\"name\">category name</label>\n")
-		fmt.Fprintf(w, "<input id=\"name\" name=\"name\" type=\"text\" size=\"20\" readonly value=\"%s\">\n", cat.Name)
+		fmt.Fprintf(w, "<input id=\"name\" name=\"name\" type=\"text\" size=\"20\" maxlength=\"20\" readonly value=\"%s\">\n", escape(cat.Name))
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
