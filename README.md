@@ -10,10 +10,10 @@ newsboard is a bulletin board for posting stories and links. Inspired by HackerN
 ## Build and Install
 
     $ make dep
-    $ sqlite3 news.db < create_tables.sql
     $ make
+    $ nb -i news.db
 
-    Run 'nb <news.db>' to start the web service.
+    Run 'nb news.db' to start the web service.
 
 newsboard uses a single sqlite3 database file to store all submissions, users, and site settings.
 

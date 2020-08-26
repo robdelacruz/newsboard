@@ -97,7 +97,7 @@ func main() {
 		s := `Usage:
 
 Start webservice using existing newsboard file:
-	groupnotesd <newsboard_file> [port]
+	nb <newsboard_file> [port]
 
 Initialize new newsboard file:
 	nb -i <newsboard_file>
