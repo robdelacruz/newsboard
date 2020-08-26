@@ -561,9 +561,10 @@ func hashPassword(pwd string) string {
 func loginUser(w http.ResponseWriter, userid int64) {
 	suserid := fmt.Sprintf("%d", userid)
 	c := http.Cookie{
-		Name:  "userid",
-		Value: suserid,
-		Path:  "/",
+		Name:     "userid",
+		Value:    suserid,
+		Path:     "/",
+		HttpOnly: true,
 		// Expires: time.Now().Add(24 * time.Hour),
 	}
 	http.SetCookie(w, &c)
@@ -671,10 +672,11 @@ func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 func logoutHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := http.Cookie{
-			Name:   "userid",
-			Value:  "",
-			Path:   "/",
-			MaxAge: 0,
+			Name:     "userid",
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			MaxAge:   0,
 		}
 		http.SetCookie(w, &c)
 
@@ -849,7 +851,7 @@ func adminsetupHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		}
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"title\">site title</label>\n")
-		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"30\" value=\"%s\">\n", f.title)
+		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"30\" maxlength=\"50\" value=\"%s\">\n", f.title)
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -1818,7 +1820,7 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"title\">title</label>\n")
-		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" value=\"%s\">\n", e.Title)
+		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\">\n", e.Title)
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -1853,7 +1855,7 @@ func submitHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"tags\">tags</label>\n")
-		fmt.Fprintf(w, "<input id=\"tags\" name=\"tags\" type=\"text\" size=\"60\" value=\"%s\">\n", tags)
+		fmt.Fprintf(w, "<input id=\"tags\" name=\"tags\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\">\n", tags)
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "  <div class=\"control\">\n")
@@ -1955,7 +1957,7 @@ func delHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<div class=\"control displayonly\">\n")
 		fmt.Fprintf(w, "<label for=\"title\">title</label>\n")
-		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" value=\"%s\" readonly>\n", e.Title)
+		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\" readonly>\n", e.Title)
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control displayonly\">\n")
@@ -2089,7 +2091,7 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"title\">title</label>\n")
-		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" value=\"%s\">\n", e.Title)
+		fmt.Fprintf(w, "<input id=\"title\" name=\"title\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\">\n", e.Title)
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
@@ -2124,7 +2126,7 @@ func editHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 
 		fmt.Fprintf(w, "<div class=\"control\">\n")
 		fmt.Fprintf(w, "<label for=\"tags\">tags</label>\n")
-		fmt.Fprintf(w, "<input id=\"tags\" name=\"tags\" type=\"text\" size=\"60\" value=\"%s\">\n", tags)
+		fmt.Fprintf(w, "<input id=\"tags\" name=\"tags\" type=\"text\" size=\"60\" maxlength=\"256\" value=\"%s\">\n", tags)
 		fmt.Fprintf(w, "</div>\n")
 
 		fmt.Fprintf(w, "  <div class=\"control\">\n")
