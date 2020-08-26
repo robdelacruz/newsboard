@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"math"
@@ -478,7 +479,7 @@ func printPageHead(w io.Writer, jsurls []string, cssurls []string, site *Site) {
 	fmt.Fprintf(w, "<head>\n")
 	fmt.Fprintf(w, "<meta charset=\"utf-8\">\n")
 	fmt.Fprintf(w, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n")
-	fmt.Fprintf(w, "<title>%s</title>\n", site.Title)
+	fmt.Fprintf(w, "<title>%s</title>\n", escape(site.Title))
 	fmt.Fprintf(w, "<link rel=\"stylesheet\" type=\"text/css\" href=\"/static/style.css\">\n")
 	fmt.Fprintf(w, "<link rel=\"stylesheet\" type=\"text/css\" href=\"/static/nbstyle.css\">\n")
 	for _, cssurl := range cssurls {
@@ -505,13 +506,13 @@ func printPageNav(w http.ResponseWriter, db *sql.DB, login *User, site *Site, qq
 	fmt.Fprintf(w, "<nav class=\"navbar\">\n")
 	// Menu section (left part)
 	fmt.Fprintf(w, "<div>\n")
-	fmt.Fprintf(w, "<h1 class=\"heading\"><a href=\"/\">%s</a></h1>\n", site.Title)
+	fmt.Fprintf(w, "<h1 class=\"heading\"><a href=\"/\">%s</a></h1>\n", escape(site.Title))
 	fmt.Fprintf(w, "<ul class=\"line-menu\">\n")
 	if qq != nil {
 		if qq.Latest != "" {
-			fmt.Fprintf(w, "  <li><a href=\"/?username=%s&cat=%d&tag=%s&latest=1\">[latest]</a></li>\n", qq.Username, qq.Cat, qq.Tag)
+			fmt.Fprintf(w, "  <li><a href=\"/?username=%s&cat=%d&tag=%s&latest=1\">[latest]</a></li>\n", url.QueryEscape(qq.Username), qq.Cat, url.QueryEscape(qq.Tag))
 		} else {
-			fmt.Fprintf(w, "  <li><a href=\"/?username=%s&cat=%d&tag=%s&latest=1\">latest</a></li>\n", qq.Username, qq.Cat, qq.Tag)
+			fmt.Fprintf(w, "  <li><a href=\"/?username=%s&cat=%d&tag=%s&latest=1\">latest</a></li>\n", url.QueryEscape(qq.Username), qq.Cat, url.QueryEscape(qq.Tag))
 		}
 	} else {
 		fmt.Fprintf(w, "  <li><a href=\"/?latest=1\">latest</a></li>\n")
@@ -527,10 +528,10 @@ func printPageNav(w http.ResponseWriter, db *sql.DB, login *User, site *Site, qq
 	if login.Userid == -1 {
 		fmt.Fprintf(w, "<li><a href=\"/login\">login</a></li>\n")
 	} else if login.Userid == ADMIN_ID {
-		fmt.Fprintf(w, "<li><a href=\"/adminsetup/\">%s</a></li>\n", login.Username)
+		fmt.Fprintf(w, "<li><a href=\"/adminsetup/\">%s</a></li>\n", escape(login.Username))
 		fmt.Fprintf(w, "<li><a href=\"/logout\">logout</a></li>\n")
 	} else {
-		fmt.Fprintf(w, "<li><a href=\"/usersetup/\">%s</a></li>\n", login.Username)
+		fmt.Fprintf(w, "<li><a href=\"/usersetup/\">%s</a></li>\n", escape(login.Username))
 		fmt.Fprintf(w, "<li><a href=\"/logout\">logout</a></li>\n")
 	}
 	fmt.Fprintf(w, "</ul>\n")
@@ -574,6 +575,17 @@ func unescapeUrl(qurl string) string {
 		returl, _ = url.QueryUnescape(qurl)
 	}
 	return returl
+}
+
+func escape(s string) string {
+	return html.EscapeString(s)
+}
+
+func normalizeTitle(title string) string {
+	if len(title) > 256 {
+		return title[:256]
+	}
+	return title
 }
 
 func loginHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
@@ -1212,26 +1224,26 @@ func printSubmissionEntry(w http.ResponseWriter, r *http.Request, db *sql.DB, qi
 
 	fmt.Fprintf(w, "<div class=\"col1\">\n")
 	fmt.Fprintf(w, "<div class=\"mb-xs text-lg\">\n")
-	fmt.Fprintf(w, "  <a class=\"no-underline\" href=\"%s\">%s</a>\n", entryurl, e.Title)
+	fmt.Fprintf(w, "  <a class=\"no-underline\" href=\"%s\">%s</a>\n", entryurl, escape(normalizeTitle(e.Title)))
 
 	// url host
 	if e.Url != "" {
 		urllink, err := url.Parse(e.Url)
 		urlhostname := strings.TrimPrefix(urllink.Hostname(), "www.")
 		if err == nil {
-			fmt.Fprintf(w, " <span class=\"text-fade-2 text-sm\">(%s)</span>\n", urlhostname)
+			fmt.Fprintf(w, " <span class=\"text-fade-2 text-sm\">(%s)</span>\n", escape(urlhostname))
 		}
 	}
 	// tags
 	for _, t := range tt {
-		fmt.Fprintf(w, " <span class=\"tag-pill text-fade-2\"><a class=\"no-underline\"href=\"/?cat=%d&tag=%s&latest=%s\">%s</a></span>\n", qi.Cat, t, qi.Latest, t)
+		fmt.Fprintf(w, " <span class=\"tag-pill text-fade-2\"><a class=\"no-underline\"href=\"/?cat=%d&tag=%s&latest=%s\">%s</a></span>\n", qi.Cat, url.QueryEscape(t), qi.Latest, escape(t))
 	}
 
 	fmt.Fprintf(w, "</div>\n")
 	fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
 	npoints := int(math.Floor(points))
 	fmt.Fprintf(w, "  <li>%d %s</li>\n", npoints, getPointCountUnit(npoints))
-	fmt.Fprintf(w, "  <li><a href=\"/?cat=%d&username=%s&latest=%s\">%s</a></li>\n", qi.Cat, submitter.Username, qi.Latest, submitter.Username)
+	fmt.Fprintf(w, "  <li><a href=\"/?cat=%d&username=%s&latest=%s\">%s</a></li>\n", qi.Cat, url.QueryEscape(submitter.Username), qi.Latest, url.QueryEscape(submitter.Username))
 	if login.Userid == ADMIN_ID || submitter.Userid == login.Userid {
 		fmt.Fprintf(w, "  <li><a class=\"\" href=\"/edit/?id=%d&from=%s\">edit</a></li>\n", e.Entryid, url.QueryEscape(r.RequestURI))
 	}
@@ -1273,7 +1285,7 @@ func printCommentEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, par
 
 	fmt.Fprintf(w, "<div class=\"col1\">\n")
 	fmt.Fprintf(w, "<ul class=\"line-menu byline\">\n")
-	fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", u.Username)
+	fmt.Fprintf(w, "  <li><a href=\"#\">%s</a></li>\n", escape(u.Username))
 	fmt.Fprintf(w, "  <li>%s</li>\n", screatedt)
 	fmt.Fprintf(w, "  <li><a href=\"%s\">%d %s</a></li>\n", itemurl, ncomments, getCountUnit(e, ncomments))
 
@@ -1285,7 +1297,7 @@ func printCommentEntry(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, par
 	root, err := queryRootEntry(db, e.Entryid)
 	if err == nil {
 		rooturl := createItemUrl(root.Entryid)
-		fmt.Fprintf(w, "  <li>on: <a href=\"%s\">%s</a></li>\n", rooturl, root.Title)
+		fmt.Fprintf(w, "  <li>on: <a href=\"%s\">%s</a></li>\n", rooturl, escape(normalizeTitle(root.Title)))
 	} else {
 		log.Printf("DB error querying root entry (%s)\n", err)
 	}
@@ -1322,13 +1334,13 @@ func printComment(w http.ResponseWriter, db *sql.DB, e *Entry, u *User, uparent 
 	fmt.Fprintf(w, "</div>\n")
 
 	fmt.Fprintf(w, "<div class=\"col1\">\n")
-	fmt.Fprintf(w, "  <p class=\"byline mb-xs\">%s <a href=\"%s\">%s</a></p>\n", u.Username, itemurl, screatedt)
+	fmt.Fprintf(w, "  <p class=\"byline mb-xs\">%s <a href=\"%s\">%s</a></p>\n", escape(u.Username), itemurl, screatedt)
 
 	fmt.Fprintf(w, "  <div class=\"content mt-xs mb-xs\">\n")
 	body := e.Body
 	if level >= 1 {
 		//		fmt.Fprintf(w, "<span class=\"mention\">@%s</span> ", uparent.Username)
-		body = fmt.Sprintf("***@%s*** %s", uparent.Username, e.Body)
+		body = fmt.Sprintf("***@%s*** %s", escape(uparent.Username), e.Body)
 	}
 	//body = parseTextLinks(body)
 	body = parseMarkdown(body)
@@ -1390,19 +1402,19 @@ func indexHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			rows.Scan(&cat.Catid, &cat.Name)
 			url := fmt.Sprintf("/?cat=%d", cat.Catid)
 			if cat.Catid == qcat {
-				fmt.Fprintf(w, "<li><a class=\"no-underline text-bold\" href=\"%s\">%s</a></li>\n", url, cat.Name)
+				fmt.Fprintf(w, "<li><a class=\"no-underline text-bold\" href=\"%s\">%s</a></li>\n", url, escape(cat.Name))
 				continue
 			}
-			fmt.Fprintf(w, "<li><a class=\"no-underline\" href=\"%s\">%s</a></li>\n", url, cat.Name)
+			fmt.Fprintf(w, "<li><a class=\"no-underline\" href=\"%s\">%s</a></li>\n", url, escape(cat.Name))
 		}
 		fmt.Fprintf(w, "  </ul>\n")
 
 		fmt.Fprintf(w, "  <ul class=\"list-none\">\n")
 		if qusername != "" {
-			fmt.Fprintf(w, "    <li class=\"inline tag-pill mr-1\">%s</li>\n", qusername)
+			fmt.Fprintf(w, "    <li class=\"inline tag-pill mr-1\">%s</li>\n", escape(qusername))
 		}
 		if qtag != "" {
-			fmt.Fprintf(w, "    <li class=\"inline tag-pill mr-1\">%s</li>\n", qtag)
+			fmt.Fprintf(w, "    <li class=\"inline tag-pill mr-1\">%s</li>\n", escape(qtag))
 		}
 		fmt.Fprintf(w, "  </ul>\n")
 		fmt.Fprintf(w, "</div>\n")
