@@ -23,6 +23,6 @@ newsboard uses a single sqlite3 database file to store all submissions, users, a
 ![newsboard item](screenshots/nb-item1.png)
 
 ## Contact
-    Twitter: @robdelacruz
+    Twitter: @robcomputing
     Source: http://github.com/robdelacruz/newsboard
 
