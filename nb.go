@@ -565,9 +565,13 @@ func loginUser(w http.ResponseWriter, userid int64) {
 		Value:    suserid,
 		Path:     "/",
 		HttpOnly: true,
-		// Expires: time.Now().Add(24 * time.Hour),
+		Expires:  time.Now().Add(daysDuration(400)),
 	}
 	http.SetCookie(w, &c)
+}
+
+func daysDuration(ndays int) time.Duration {
+	return time.Hour * 24 * time.Duration(ndays)
 }
 
 func unescapeUrl(qurl string) string {
@@ -2578,7 +2582,7 @@ func decrypt(data []byte, passphrase string) []byte {
 	return plaintext
 }
 
-//todo Make this configurable and hidden.
+// todo Make this configurable and hidden.
 const PASSPHRASE = "newsboard_passphrase"
 
 func encryptString(s string) string {
